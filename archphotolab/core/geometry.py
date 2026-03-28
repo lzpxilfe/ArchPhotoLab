@@ -5,6 +5,15 @@ from typing import List, Sequence, Tuple
 import cv2
 import numpy as np
 
+from archphotolab.constants import (
+    HOMOGRAPHY_METHOD,
+    MIN_ALIGNMENT_POINTS,
+    MSG_HOMOGRAPHY_BAD_POINT_SHAPE,
+    MSG_HOMOGRAPHY_BAD_RESULT,
+    MSG_HOMOGRAPHY_DEGENERATE,
+    MSG_HOMOGRAPHY_REQUIRE_MIN_POINTS_FMT,
+)
+
 
 def _to_float_points(points: Sequence[Tuple[float, float]]) -> np.ndarray:
     return np.asarray(points, dtype=np.float32)
@@ -24,20 +33,20 @@ def estimate_homography(
     p_count = len(photo_points)
     q_count = len(plan_points)
     use_count = min(p_count, q_count)
-    if use_count < 4:
-        return None, "대응점을 4개 이상 찍어주세요.", use_count
+    if use_count < MIN_ALIGNMENT_POINTS:
+        return None, MSG_HOMOGRAPHY_REQUIRE_MIN_POINTS_FMT.format(min_points=MIN_ALIGNMENT_POINTS), use_count
 
     src = _to_float_points(plan_points[:use_count])
     dst = _to_float_points(photo_points[:use_count])
 
     if src.ndim != 2 or src.shape[0] < 4 or src.shape[1] != 2:
-        return None, "점 좌표 형식이 잘못되었습니다.", use_count
+        return None, MSG_HOMOGRAPHY_BAD_POINT_SHAPE, use_count
 
-    H, _mask = cv2.findHomography(src, dst, method=0)
+    H, _mask = cv2.findHomography(src, dst, method=HOMOGRAPHY_METHOD)
     if H is None:
-        return None, "정합을 계산할 수 없습니다. 점이 거의 일직선이거나 특이한 배치인지 확인하세요.", use_count
+        return None, MSG_HOMOGRAPHY_DEGENERATE, use_count
     if H.shape != (3, 3):
-        return None, "정합 결과 형식이 비정상입니다.", use_count
+        return None, MSG_HOMOGRAPHY_BAD_RESULT, use_count
     return H, None, use_count
 
 

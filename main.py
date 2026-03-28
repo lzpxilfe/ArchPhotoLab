@@ -9,10 +9,37 @@ from PySide6.QtCore import Qt, QTimer, qInstallMessageHandler
 from PySide6.QtGui import QColor, QFont, QIcon, QPainter, QPixmap
 from PySide6.QtWidgets import QApplication, QSplashScreen, QMessageBox
 
+from archphotolab.constants import (
+    APP_ICON_FILE,
+    APP_NAME,
+    DEFAULT_WINDOW_SIZE,
+    DIALOG_TITLE_ERROR,
+    PYTHON_LOG_FORMAT,
+    MSG_FATAL_LOG_PREFIX,
+    SPLASH_BG_COLOR,
+    SPLASH_BODY_FONT_SIZE,
+    SPLASH_DURATION_MS,
+    SPLASH_ICON_MAX_SIZE,
+    SPLASH_ICON_TOP_MARGIN,
+    SPLASH_MESSAGE_LINES,
+    SPLASH_TEXT_COLOR,
+    SPLASH_TITLE,
+    SPLASH_TITLE_BAR_HEIGHT,
+    SPLASH_TITLE_FONT_SIZE,
+    SPLASH_TEXT_HEIGHT,
+    SPLASH_TEXT_LEFT,
+    SPLASH_TEXT_TOP_OFFSET,
+    SPLASH_TEXT_WIDTH_MARGIN,
+    SPLASH_TEXT_Y_ICON_FAILED,
+    SPLASH_TEXT_Y_NO_ICON,
+    SPLASH_TEXT_Y_WITH_ICON_OFFSET,
+    SPLASH_WIDTH,
+    SPLASH_HEIGHT,
+)
 from archphotolab.ui.main_window import MainWindow
 
 
-logging.basicConfig(level=logging.INFO, format='%(asctime)s [%(levelname)s] %(message)s')
+logging.basicConfig(level=logging.INFO, format=PYTHON_LOG_FORMAT)
 LOGGER = logging.getLogger(__name__)
 
 
@@ -23,72 +50,70 @@ def _qt_message_handler(mode, context, message):
 
 def _show_error_dialog(exc: Exception) -> None:
     """Show a simple error dialog for uncaught exceptions while keeping logs."""
-    QMessageBox.critical(None, "오류", f"{type(exc).__name__}: {exc}")
+    QMessageBox.critical(None, DIALOG_TITLE_ERROR, f"{type(exc).__name__}: {exc}")
 
 
 def _app_icon_path() -> Optional[Path]:
-    icon_path = Path(__file__).resolve().parent / "icon.png"
+    icon_path = Path(__file__).resolve().parent / APP_ICON_FILE
     return icon_path if icon_path.exists() else None
 
 
 def _startup_splash(app: QApplication) -> Optional[QSplashScreen]:
     icon_path = _app_icon_path()
-    width = 520
-    height = 260
+    width = SPLASH_WIDTH
+    height = SPLASH_HEIGHT
 
     pix = QPixmap(width, height)
-    pix.fill(QColor(24, 28, 38))
+    pix.fill(QColor(*SPLASH_BG_COLOR))
 
     painter = QPainter(pix)
     painter.setRenderHint(QPainter.Antialiasing)
 
     title_font = QFont()
-    title_font.setPointSize(15)
+    title_font.setPointSize(SPLASH_TITLE_FONT_SIZE)
     title_font.setBold(True)
 
     body_font = QFont()
-    body_font.setPointSize(10)
+    body_font.setPointSize(SPLASH_BODY_FONT_SIZE)
 
     if icon_path is not None:
         icon = QPixmap(str(icon_path))
         if not icon.isNull():
-            icon = icon.scaled(150, 150, Qt.KeepAspectRatio, Qt.SmoothTransformation)
+            icon = icon.scaled(SPLASH_ICON_MAX_SIZE, SPLASH_ICON_MAX_SIZE, Qt.KeepAspectRatio, Qt.SmoothTransformation)
             x = (width - icon.width()) // 2
-            painter.drawPixmap(x, 16, icon)
-            y_text = icon.height() + 30
+            painter.drawPixmap(x, SPLASH_ICON_TOP_MARGIN, icon)
+            y_text = icon.height() + SPLASH_TEXT_Y_WITH_ICON_OFFSET
         else:
-            y_text = 26
+            y_text = SPLASH_TEXT_Y_ICON_FAILED
     else:
-        y_text = 30
+        y_text = SPLASH_TEXT_Y_NO_ICON
 
-    painter.setPen(QColor(228, 236, 255))
+    painter.setPen(QColor(*SPLASH_TEXT_COLOR))
     painter.setFont(title_font)
-    painter.drawText(0, y_text, width, 34, Qt.AlignHCenter, "ArchPhotoLab")
+    painter.drawText(0, y_text, width, SPLASH_TITLE_BAR_HEIGHT, Qt.AlignHCenter, SPLASH_TITLE)
     painter.setFont(body_font)
     painter.drawText(
-        20,
-        y_text + 38,
-        width - 40,
-        70,
+        SPLASH_TEXT_LEFT,
+        y_text + SPLASH_TEXT_TOP_OFFSET,
+        width - SPLASH_TEXT_WIDTH_MARGIN,
+        SPLASH_TEXT_HEIGHT,
         Qt.AlignHCenter | Qt.TextWordWrap,
-        "GNU General Public License 2.0 기반\n"
-        "공공에게 공개된 오픈 소스 도구입니다.\n"
-        "사진-도면 정합·점 기반 작업 워크플로를 시작합니다.",
+        "\n".join(SPLASH_MESSAGE_LINES),
     )
     painter.end()
 
     splash = QSplashScreen(pix)
     splash.show()
     app.processEvents()
-    QTimer.singleShot(1400, splash.close)
+    QTimer.singleShot(SPLASH_DURATION_MS, splash.close)
     return splash
 
 
 def main() -> int:
     qInstallMessageHandler(_qt_message_handler)
     app = QApplication(sys.argv)
-    app.setApplicationName("ArchPhotoLab")
-    app.setApplicationDisplayName("ArchPhotoLab")
+    app.setApplicationName(APP_NAME)
+    app.setApplicationDisplayName(APP_NAME)
 
     icon_path = _app_icon_path()
     if icon_path is not None:
@@ -101,13 +126,13 @@ def main() -> int:
         win = MainWindow()
         if icon_path is not None:
             win.setWindowIcon(QIcon(str(icon_path)))
-        win.resize(1660, 1020)
+        win.resize(*DEFAULT_WINDOW_SIZE)
         win.show()
         if splash is not None:
             splash.finish(win)
         return int(app.exec())
     except Exception as exc:  # pragma: no cover - safety fallback
-        LOGGER.exception("Fatal error during startup")
+        LOGGER.exception(MSG_FATAL_LOG_PREFIX)
         _show_error_dialog(exc)
         return 1
 

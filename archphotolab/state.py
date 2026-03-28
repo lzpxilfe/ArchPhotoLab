@@ -5,6 +5,8 @@ from typing import List, Optional, Tuple
 
 import numpy as np
 
+from archphotolab.constants import OVERLAY_ALPHA_DEFAULT, VIEW_MODE_OVERLAY, VIEW_MODE_PHOTO
+
 
 Point = Tuple[float, float]
 
@@ -28,16 +30,16 @@ class AppState:
     homography: Optional[np.ndarray] = None  # 3x3
     warped_plan: Optional[np.ndarray] = None  # RGB uint8 in photo coordinates
 
-    overlay_alpha: float = 0.45
+    overlay_alpha: float = OVERLAY_ALPHA_DEFAULT
     reprojection_errors: List[float] = field(default_factory=list)
     reprojection_avg: Optional[float] = None
     reprojection_max: Optional[float] = None
 
-    result_view_mode: str = "overlay"
+    result_view_mode: str = VIEW_MODE_OVERLAY
 
     selected_photo_point: Optional[int] = None
     selected_plan_point: Optional[int] = None
-    selected_point_side: str = "photo"
+    selected_point_side: str = VIEW_MODE_PHOTO
 
     last_project_file: str = ""
 
@@ -47,10 +49,6 @@ class AppState:
         self.reprojection_errors = []
         self.reprojection_avg = None
         self.reprojection_max = None
-
-    @staticmethod
-    def _point_tuple_list(points: List[Point]) -> List[tuple]:
-        return [(float(x), float(y)) for x, y in points]
 
     def photo_point_count(self) -> int:
         return len(self.photo_points)
