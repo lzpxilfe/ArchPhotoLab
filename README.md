@@ -1,4 +1,4 @@
-# 🏛️ ArchPhotoLab v1
+# 🏛️ ArchPhotoLab v0.1.0
 
 ArchPhotoLab은 고고학 현장의 **드론 사진 + 도면** 정합을 빠르게 처리하는 데스크톱 도구입니다.
 

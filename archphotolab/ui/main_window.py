@@ -34,6 +34,7 @@ from archphotolab.core.imagery import blend_overlay, flatten_illumination, load_
 from archphotolab.core.project_io import (
     apply_project_dict_to_state,
     load_project,
+    PROJECT_FORMAT,
     resolve_saved_image_path,
     state_to_dict,
 )
@@ -914,7 +915,7 @@ class MainWindow(QMainWindow):
         payload = state_to_dict(self.state)
         payload["photo_path"] = self.state.photo_path
         payload["plan_path"] = self.state.plan_path
-        payload["format_version"] = "1.0"
+        payload["format_version"] = PROJECT_FORMAT
 
         with open(file_path, "w", encoding="utf-8") as f:
             json.dump(payload, f, ensure_ascii=False, indent=2)

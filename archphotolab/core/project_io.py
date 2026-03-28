@@ -8,7 +8,7 @@ from typing import Any, Dict, List, Optional, Tuple
 from archphotolab.state import AppState
 
 
-PROJECT_FORMAT = "1.0"
+PROJECT_FORMAT = "0.1.0"
 
 
 def state_to_dict(state: AppState) -> Dict[str, Any]:
