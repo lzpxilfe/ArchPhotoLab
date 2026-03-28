@@ -1,0 +1,28 @@
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+.Python
+build/
+dist/
+.eggs/
+*.egg-info/
+.python-version
+
+# Virtual environments
+.venv/
+venv/
+ENV/
+env/
+
+# IDE / OS files
+.DS_Store
+.idea/
+.vscode/
+*.swp
+
+# Logs
+*.log
+
+# PySide generated
+*.qmlc
