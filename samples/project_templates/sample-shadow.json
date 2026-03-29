@@ -1,0 +1,23 @@
+{
+  "format_version": "0.1.0",
+  "photo_path": "samples/assets/photo_shadow.jpg",
+  "plan_path": "samples/assets/plan_shadow.jpg",
+  "photo_points": [
+    {"x": 80.0, "y": 90.0},
+    {"x": 240.0, "y": 95.0},
+    {"x": 130.0, "y": 270.0},
+    {"x": 310.0, "y": 285.0}
+  ],
+  "plan_points": [
+    {"x": 78.0, "y": 84.0},
+    {"x": 232.0, "y": 98.0},
+    {"x": 128.0, "y": 258.0},
+    {"x": 315.0, "y": 292.0}
+  ],
+  "overlay_alpha": 0.45,
+  "alignment_mode": "similarity",
+  "flatten_preset": "강한음영완화",
+  "flatten_intensity": 90,
+  "show_flat_photo": true,
+  "result_view_mode": "overlay"
+}

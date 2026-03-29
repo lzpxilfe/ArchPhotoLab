@@ -1,0 +1,23 @@
+{
+  "format_version": "0.1.0",
+  "photo_path": "samples/assets/photo_good.jpg",
+  "plan_path": "samples/assets/plan_good.jpg",
+  "photo_points": [
+    {"x": 100.0, "y": 120.0},
+    {"x": 260.0, "y": 130.0},
+    {"x": 120.0, "y": 340.0},
+    {"x": 300.0, "y": 350.0}
+  ],
+  "plan_points": [
+    {"x": 90.0, "y": 110.0},
+    {"x": 250.0, "y": 125.0},
+    {"x": 115.0, "y": 330.0},
+    {"x": 290.0, "y": 350.0}
+  ],
+  "overlay_alpha": 0.45,
+  "alignment_mode": "homography",
+  "flatten_preset": "기록용",
+  "flatten_intensity": 85,
+  "show_flat_photo": false,
+  "result_view_mode": "overlay"
+}

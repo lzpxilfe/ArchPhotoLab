@@ -1,0 +1,25 @@
+{
+  "format_version": "0.1.0",
+  "photo_path": "samples/assets/photo_outlier.jpg",
+  "plan_path": "samples/assets/plan_outlier.jpg",
+  "photo_points": [
+    {"x": 95.0, "y": 105.0},
+    {"x": 220.0, "y": 135.0},
+    {"x": 130.0, "y": 280.0},
+    {"x": 270.0, "y": 305.0},
+    {"x": 190.0, "y": 190.0}
+  ],
+  "plan_points": [
+    {"x": 92.0, "y": 99.0},
+    {"x": 218.0, "y": 136.0},
+    {"x": 126.0, "y": 275.0},
+    {"x": 275.0, "y": 308.0},
+    {"x": 205.0, "y": 250.0}
+  ],
+  "overlay_alpha": 0.45,
+  "alignment_mode": "affine",
+  "flatten_preset": "부드러운정리",
+  "flatten_intensity": 80,
+  "show_flat_photo": true,
+  "result_view_mode": "overlay"
+}
