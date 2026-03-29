@@ -5,6 +5,7 @@ from PySide6.QtWidgets import QHBoxLayout, QPushButton, QWidget
 from archphotolab.constants import (
     CONTROL_MIN_HEIGHT,
     CONTROL_MIN_WIDTH,
+    POINT_EDITOR_BUTTON_SPACING,
     VIEW_BUTTON_REDO,
     VIEW_BUTTON_REORDER_DOWN,
     VIEW_BUTTON_REORDER_UP,
@@ -25,7 +26,7 @@ class PointEditorPanel(QWidget):
             btn.setMinimumWidth(CONTROL_MIN_WIDTH)
 
         layout = QHBoxLayout(self)
-        layout.setSpacing(6)
+        layout.setSpacing(POINT_EDITOR_BUTTON_SPACING)
         layout.addWidget(self.btn_undo)
         layout.addWidget(self.btn_redo)
         layout.addWidget(self.btn_up)

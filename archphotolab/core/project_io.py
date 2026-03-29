@@ -10,6 +10,9 @@ import numpy as np
 from archphotolab.constants import (
     APP_VERSION,
     DEFAULT_ALIGNMENT_MODE,
+    OVERLAY_ALPHA_DEFAULT,
+    POINT_PANEL_ZOOM_DEFAULT,
+    MSG_PROJECT_VERSION_UPGRADE_FMT,
     FLATTEN_PRESET_DEFAULT,
     FLATTEN_PRESET_INTENSITY_DEFAULT,
     FLATTEN_PRESET_INTENSITY_MAX,
@@ -24,6 +27,7 @@ from archphotolab.constants import (
     SPLIT_VIEW_MAX_RATIO,
     SPLIT_VIEW_MIN_RATIO,
     TRANSFORM_MODE_OPTIONS,
+    TRANSFORM_MATRIX_SHAPES,
     VIEW_MODE_OVERLAY,
     ProjectKeys,
 )
@@ -115,7 +119,7 @@ def parse_homography(value: Any):
     if value is None or not isinstance(value, list):
         return None
     arr = np.array(value, dtype=float)
-    if arr.shape not in [(3, 3), (2, 3)]:
+    if arr.shape not in TRANSFORM_MATRIX_SHAPES:
         return None
     return arr
 
@@ -128,7 +132,9 @@ def migrate_project_payload(raw: Dict[str, Any]) -> Tuple[Dict[str, Any], List[s
     loaded_version = _normalize_version(payload.get(ProjectKeys.FORMAT_VERSION))
     current = _normalize_version(APP_VERSION)
     if _version_tuple(loaded_version) < _version_tuple(current):
-        warnings.append(f"프로젝트 버전 업그레이드: {loaded_version} → {current}")
+        warnings.append(
+            MSG_PROJECT_VERSION_UPGRADE_FMT.format(from_version=loaded_version, to_version=current),
+        )
 
     payload.setdefault(ProjectKeys.FORMAT_VERSION, PROJECT_FORMAT)
     payload.setdefault(ProjectKeys.PHOTO_PATH, None)
@@ -142,17 +148,17 @@ def migrate_project_payload(raw: Dict[str, Any]) -> Tuple[Dict[str, Any], List[s
     payload.setdefault(ProjectKeys.SHOW_SPLIT_VIEW, False)
     payload.setdefault(ProjectKeys.SPLIT_VIEW_RATIO, SPLIT_VIEW_DEFAULT_RATIO)
     payload.setdefault(ProjectKeys.RESULT_VIEW_MODE, VIEW_MODE_OVERLAY)
-    payload.setdefault(ProjectKeys.OVERLAY_ALPHA, 0.45)
+    payload.setdefault(ProjectKeys.OVERLAY_ALPHA, OVERLAY_ALPHA_DEFAULT)
     payload.setdefault(ProjectKeys.HOMOGRAPHY, None)
     payload.setdefault(ProjectKeys.REPROJECTION_AVG, None)
     payload.setdefault(ProjectKeys.REPROJECTION_MEDIAN, None)
     payload.setdefault(ProjectKeys.REPROJECTION_MAX, None)
     payload.setdefault(ProjectKeys.REPROJECTION_ERRORS, [])
     payload.setdefault(ProjectKeys.WORKFLOW_STAGE, "")
-    payload.setdefault(ProjectKeys.PHOTO_VIEW_ZOOM, 1.0)
+    payload.setdefault(ProjectKeys.PHOTO_VIEW_ZOOM, POINT_PANEL_ZOOM_DEFAULT)
     payload.setdefault(ProjectKeys.PHOTO_VIEW_PAN_X, 0)
     payload.setdefault(ProjectKeys.PHOTO_VIEW_PAN_Y, 0)
-    payload.setdefault(ProjectKeys.PLAN_VIEW_ZOOM, 1.0)
+    payload.setdefault(ProjectKeys.PLAN_VIEW_ZOOM, POINT_PANEL_ZOOM_DEFAULT)
     payload.setdefault(ProjectKeys.PLAN_VIEW_PAN_X, 0)
     payload.setdefault(ProjectKeys.PLAN_VIEW_PAN_Y, 0)
     payload.setdefault(ProjectKeys.POINT_EDITOR_STATE, {})

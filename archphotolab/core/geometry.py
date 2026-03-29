@@ -11,6 +11,10 @@ from archphotolab.constants import (
     ALIGNMENT_MODE_HOMOGRAPHY,
     ALIGNMENT_MODE_SIMILARITY,
     DEFAULT_ALIGNMENT_MODE,
+    ALIGNMENT_RANSAC_THRESHOLD_DEFAULT,
+    GEOMETRY_DEFAULT_RANSAC_THRESHOLD,
+    GEOMETRY_NUMERIC_EPSILON,
+    ALIGNMENT_SCORE_OFFSET,
     QUALITY_GRADE_GOOD,
     QUALITY_GRADE_NORMAL,
     QUALITY_GRADE_POOR,
@@ -20,11 +24,19 @@ from archphotolab.constants import (
     ERROR_WARNING_PERCENTILE,
     HOMOGRAPHY_METHOD,
     MIN_ALIGNMENT_POINTS,
+    QUALITY_MAD_SCALE_FACTOR,
+    QUALITY_MAD_EMPTY_MULTIPLIER,
+    QUALITY_PERCENTILE_SAMPLE_MIN,
+    QUALITY_MAD_SAMPLE_MIN,
     MSG_ALIGNMENT_MODE_UNSUPPORTED,
     MSG_HOMOGRAPHY_BAD_POINT_SHAPE,
     MSG_HOMOGRAPHY_BAD_RESULT,
     MSG_HOMOGRAPHY_DEGENERATE,
     MSG_HOMOGRAPHY_REQUIRE_MIN_POINTS_FMT,
+    MSG_TRANSFORM_MATRIX_MISSING,
+    TRANSFORM_MATRIX_SHAPES,
+    TRANSFORM_MATRIX_SHAPE_AFFINE,
+    TRANSFORM_MATRIX_SHAPE_HOMOGRAPHY,
 )
 
 
@@ -38,7 +50,18 @@ class AlignmentConfig:
 
     mode: str = DEFAULT_ALIGNMENT_MODE
     ransac: bool = False
-    ransac_reproj_threshold: float = 3.0
+    ransac_reproj_threshold: float = ALIGNMENT_RANSAC_THRESHOLD_DEFAULT
+
+
+def _empty_quality_profile() -> QualityProfile:
+    return QualityProfile(
+        average_error=None,
+        median_error=None,
+        max_error=None,
+        bad_count=0,
+        grade=QUALITY_GRADE_UNKNOWN,
+        inlier_count=0,
+    )
 
 
 @dataclass
@@ -97,7 +120,12 @@ def _estimate_affine(src: np.ndarray, dst: np.ndarray, cfg: AlignmentConfig) -> 
         )
         return matrix, mask
 
-    matrix, _ = cv2.estimateAffine2D(src.reshape(-1, 1, 2), dst.reshape(-1, 1, 2), method=0, ransacReprojThreshold=0)
+    matrix, _ = cv2.estimateAffine2D(
+        src.reshape(-1, 1, 2),
+        dst.reshape(-1, 1, 2),
+        method=HOMOGRAPHY_METHOD,
+        ransacReprojThreshold=GEOMETRY_DEFAULT_RANSAC_THRESHOLD,
+    )
     return matrix, None
 
 
@@ -114,8 +142,8 @@ def _estimate_similarity(src: np.ndarray, dst: np.ndarray, cfg: AlignmentConfig)
     matrix, _ = cv2.estimateAffinePartial2D(
         src.reshape(-1, 1, 2),
         dst.reshape(-1, 1, 2),
-        method=0,
-        ransacReprojThreshold=0,
+        method=HOMOGRAPHY_METHOD,
+        ransacReprojThreshold=GEOMETRY_DEFAULT_RANSAC_THRESHOLD,
     )
     return matrix, None
 
@@ -125,7 +153,7 @@ def _project_plan_points(plan_points: np.ndarray, matrix: np.ndarray) -> np.ndar
         return np.empty((0, 2), dtype=np.float32)
     src = plan_points.reshape(-1, 1, 2)
 
-    if matrix.shape == (3, 3):
+    if matrix.shape == TRANSFORM_MATRIX_SHAPE_HOMOGRAPHY:
         projected = cv2.perspectiveTransform(src, matrix)
     else:
         projected = cv2.transform(src, matrix)
@@ -136,21 +164,21 @@ def _project_plan_points(plan_points: np.ndarray, matrix: np.ndarray) -> np.ndar
 def _safe_percentile_threshold(values: Sequence[float]) -> float:
     if not values:
         return float("inf")
-    if len(values) < 3:
+    if len(values) < QUALITY_PERCENTILE_SAMPLE_MIN:
         return max(values)
     return float(np.percentile(np.asarray(values, dtype=np.float32), ERROR_WARNING_PERCENTILE))
 
 
 def _mad_threshold(values: Sequence[float]) -> float:
     arr = np.asarray(values, dtype=np.float32)
-    if arr.size < 4:
+    if arr.size < QUALITY_MAD_SAMPLE_MIN:
         return float("inf")
 
     median = float(np.median(arr))
     mad = np.median(np.abs(arr - median))
-    if mad <= 1e-6:
-        return median * 3.0
-    return float(median + 3.4826 * mad)
+    if mad <= GEOMETRY_NUMERIC_EPSILON:
+        return median * QUALITY_MAD_EMPTY_MULTIPLIER
+    return float(median + QUALITY_MAD_SCALE_FACTOR * mad)
 
 
 def _grade_from_errors(errors: Sequence[float]) -> str:
@@ -169,14 +197,7 @@ def _grade_from_errors(errors: Sequence[float]) -> str:
 
 def _build_quality_profile(errors: Sequence[float], inlier_mask: Optional[np.ndarray]) -> QualityProfile:
     if not errors:
-        return QualityProfile(
-            average_error=None,
-            median_error=None,
-            max_error=None,
-            bad_count=0,
-            grade=QUALITY_GRADE_UNKNOWN,
-            inlier_count=0,
-        )
+        return _empty_quality_profile()
 
     arr = np.asarray(errors, dtype=np.float32)
     percentile_threshold = _safe_percentile_threshold(arr.tolist())
@@ -199,8 +220,8 @@ def _alignment_score(profile: QualityProfile) -> float:
         return 0.0
     error = profile.average_error
     if error <= 0:
-        return 1.0
-    return float(1.0 / (1.0 + error))
+        return ALIGNMENT_SCORE_OFFSET
+    return float(ALIGNMENT_SCORE_OFFSET / (ALIGNMENT_SCORE_OFFSET + error))
 
 
 def estimate_transform(
@@ -220,14 +241,7 @@ def estimate_transform(
             score=0.0,
             outlier_indices=[],
             inlier_mask=None,
-            quality_profile=QualityProfile(
-                average_error=None,
-                median_error=None,
-                max_error=None,
-                bad_count=0,
-                grade=QUALITY_GRADE_UNKNOWN,
-                inlier_count=0,
-            ),
+            quality_profile=_empty_quality_profile(),
             mode=cfg.mode,
             error_message=MSG_HOMOGRAPHY_REQUIRE_MIN_POINTS_FMT.format(min_points=MIN_ALIGNMENT_POINTS),
         )
@@ -240,14 +254,7 @@ def estimate_transform(
             score=0.0,
             outlier_indices=[],
             inlier_mask=None,
-            quality_profile=QualityProfile(
-                average_error=None,
-                median_error=None,
-                max_error=None,
-                bad_count=0,
-                grade=QUALITY_GRADE_UNKNOWN,
-                inlier_count=0,
-            ),
+            quality_profile=_empty_quality_profile(),
             mode=cfg.mode,
             error_message=MSG_HOMOGRAPHY_BAD_POINT_SHAPE,
         )
@@ -266,14 +273,7 @@ def estimate_transform(
             score=0.0,
             outlier_indices=[],
             inlier_mask=None,
-            quality_profile=QualityProfile(
-                average_error=None,
-                median_error=None,
-                max_error=None,
-                bad_count=0,
-                grade=QUALITY_GRADE_UNKNOWN,
-                inlier_count=0,
-            ),
+            quality_profile=_empty_quality_profile(),
             mode=cfg.mode,
             error_message=MSG_ALIGNMENT_MODE_UNSUPPORTED,
         )
@@ -286,19 +286,12 @@ def estimate_transform(
             score=0.0,
             outlier_indices=[],
             inlier_mask=None,
-            quality_profile=QualityProfile(
-                average_error=None,
-                median_error=None,
-                max_error=None,
-                bad_count=0,
-                grade=QUALITY_GRADE_UNKNOWN,
-                inlier_count=0,
-            ),
+            quality_profile=_empty_quality_profile(),
             mode=cfg.mode,
             error_message=MSG_HOMOGRAPHY_DEGENERATE,
         )
 
-    if matrix.shape not in [(3, 3), (2, 3)]:
+    if matrix.shape not in TRANSFORM_MATRIX_SHAPES:
         return AlignmentResult(
             matrix=None,
             used_point_count=use_count,
@@ -306,14 +299,7 @@ def estimate_transform(
             score=0.0,
             outlier_indices=[],
             inlier_mask=inliers,
-            quality_profile=QualityProfile(
-                average_error=None,
-                median_error=None,
-                max_error=None,
-                bad_count=0,
-                grade=QUALITY_GRADE_UNKNOWN,
-                inlier_count=0,
-            ),
+            quality_profile=_empty_quality_profile(),
             mode=cfg.mode,
             error_message=MSG_HOMOGRAPHY_BAD_RESULT,
         )
@@ -356,9 +342,9 @@ def warp_plan_to_photo(
     height, width = photo_shape[:2]
 
     if transform_matrix is None:
-        raise ValueError("transform_matrix is missing")
+        raise ValueError(MSG_TRANSFORM_MATRIX_MISSING)
 
-    if transform_matrix.shape == (3, 3):
+    if transform_matrix.shape == TRANSFORM_MATRIX_SHAPE_HOMOGRAPHY:
         return cv2.warpPerspective(
             plan_image,
             transform_matrix,
@@ -368,7 +354,7 @@ def warp_plan_to_photo(
             borderValue=(0, 0, 0),
         )
 
-    if transform_matrix.shape == (2, 3):
+    if transform_matrix.shape == TRANSFORM_MATRIX_SHAPE_AFFINE:
         return cv2.warpAffine(
             plan_image,
             transform_matrix,
@@ -378,7 +364,7 @@ def warp_plan_to_photo(
             borderValue=(0, 0, 0),
         )
 
-    if mode == ALIGNMENT_MODE_AFFINE and transform_matrix.shape == (3, 3):
+    if mode == ALIGNMENT_MODE_AFFINE and transform_matrix.shape == TRANSFORM_MATRIX_SHAPE_HOMOGRAPHY:
         # 안전장치: 잘못된 모양 데이터가 들어오는 케이스
         affine = transform_matrix[:2, :]
         return cv2.warpAffine(

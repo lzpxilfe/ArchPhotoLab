@@ -9,13 +9,19 @@ import numpy as np
 from archphotolab.constants import (
     BACKGROUND_EPSILON,
     BACKGROUND_ESTIMATION_SCALE,
+    BACKGROUND_KERNEL_MIN,
+    CLAHE_TILE,
+    FLATTEN_PRESET_RECORD,
     FLATTEN_PRESET_INTENSITY_DEFAULT,
     FLATTEN_PRESET_KEYS,
     FLATTEN_PRESETS,
     FLATTEN_PRESET_SHADOW,
     FLATTEN_PRESET_SOFT,
+    IMAGE_COLOR_CHANNEL_INDEX,
     IMAGE_EXT_MAX,
-    IMAGE_EXT_MIN,
+    IMAGE_VALUE_COUNT,
+    IMAGE_VALUE_LOWER_CLIP,
+    IMAGE_VALUE_UPPER_CLIP,
     KERNEL_MIN_SIZE,
     MSG_FLATTEN_PRESET_INVALID,
     MSG_IMAGE_LOAD_FAIL_FMT,
@@ -24,8 +30,9 @@ from archphotolab.constants import (
     MSG_IMAGE_UNSUPPORTED_EXTENSION,
     MSG_OVERLAY_IMAGE_MISSING,
     MSG_OVERLAY_IMAGE_SIZE_MISMATCH,
-    OVERLAY_ALPHA_MAX,
     OVERLAY_ALPHA_MIN,
+    OVERLAY_ALPHA_MAX,
+    POINT_PANEL_EPSILON,
     SUPPORTED_IMAGE_EXTENSIONS,
     SPLIT_VIEW_DEFAULT_RATIO,
     SPLIT_VIEW_MAX_RATIO,
@@ -62,7 +69,7 @@ def blend_overlay(photo_image: np.ndarray, warped_plan_image: np.ndarray, alpha:
     plan = warped_plan_image.astype(np.float32)
 
     result = photo * (1.0 - clamped_alpha) + plan * clamped_alpha
-    return np.clip(result, 0, 255).astype(np.uint8)
+    return np.clip(result, IMAGE_VALUE_LOWER_CLIP, IMAGE_VALUE_UPPER_CLIP).astype(np.uint8)
 
 
 def _safe_odd(value: int) -> int:
@@ -77,15 +84,18 @@ def _background_kernel(size: Tuple[int, int], scale: float) -> int:
     short = min(h, w)
     if short < 2:
         return KERNEL_MIN_SIZE
-    k = max(31, int(short * scale))
+    k = max(BACKGROUND_KERNEL_MIN, int(short * scale))
     if k >= short:
         k = short - 1 if short % 2 else short - 2
     return _safe_odd(k)
 
 
 def _apply_gamma_channel(channel: np.ndarray, gamma: float) -> np.ndarray:
-    inv_gamma = 1.0 / max(gamma, 1e-6)
-    lut = np.array([((i / 255.0) ** inv_gamma) * 255 for i in range(256)]).astype("uint8")
+    inv_gamma = 1.0 / max(gamma, POINT_PANEL_EPSILON)
+    lut = np.array([
+        ((i / IMAGE_EXT_MAX) ** inv_gamma) * IMAGE_EXT_MAX
+        for i in range(IMAGE_VALUE_COUNT)
+    ]).astype("uint8")
     return cv2.LUT(channel.astype(np.uint8), lut)
 
 
@@ -101,13 +111,13 @@ def flatten_illumination(
     if rgb_image is None:
         raise ValueError(MSG_IMAGE_NOT_FOUND)
 
-    if rgb_image.ndim != 3 or rgb_image.shape[2] != 3:
+    if rgb_image.ndim != 3 or rgb_image.shape[2] != IMAGE_COLOR_CHANNEL_INDEX + 1:
         raise ValueError(MSG_IMAGE_RGB_ONLY)
 
     if preset not in FLATTEN_PRESET_KEYS:
         raise ValueError(MSG_FLATTEN_PRESET_INVALID)
 
-    alpha = float(np.clip(int(intensity), 0, 100)) / float(OVERLAY_ALPHA_MAX)
+    alpha = float(np.clip(int(intensity), OVERLAY_ALPHA_MIN, OVERLAY_ALPHA_MAX)) / float(OVERLAY_ALPHA_MAX)
     if alpha <= 0.0:
         return rgb_image.copy()
 
@@ -122,9 +132,9 @@ def flatten_illumination(
 
     mean_l = max(float(l_float.mean()), 1.0)
     reduced = l_float / (illum + BACKGROUND_EPSILON) * mean_l
-    reduced = np.clip(reduced, IMAGE_EXT_MIN, IMAGE_EXT_MAX).astype(np.uint8)
+    reduced = np.clip(reduced, IMAGE_VALUE_LOWER_CLIP, IMAGE_VALUE_UPPER_CLIP).astype(np.uint8)
 
-    clahe = cv2.createCLAHE(clipLimit=float(params["clahe_clip"]), tileGridSize=(8, 8))
+    clahe = cv2.createCLAHE(clipLimit=float(params["clahe_clip"]), tileGridSize=CLAHE_TILE)
     reduced = clahe.apply(reduced)
     reduced = _apply_gamma_channel(reduced, float(params["gamma"]))
 

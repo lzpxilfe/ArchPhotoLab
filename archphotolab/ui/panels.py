@@ -9,6 +9,8 @@ from PySide6.QtWidgets import QWidget
 
 from archphotolab.constants import (
     ERROR_GRADE_WARNING,
+    MIN_PANEL_SIZE,
+    IMAGE_COLOR_CHANNEL_INDEX,
     IMAGE_PANEL_BACKGROUND_RGB,
     IMAGE_PANEL_BORDER_RGB,
     IMAGE_PANEL_HINT_TEXT,
@@ -20,6 +22,20 @@ from archphotolab.constants import (
     IMAGE_PANEL_TITLE_Y_OFFSET,
     PANEL_RENDER_PADDING_BOTTOM,
     PANEL_TOP_BANNER_HEIGHT,
+    POINT_PANEL_HINT_FONT_SIZE,
+    POINT_PANEL_MOUSE_DRAG_ROUNDING,
+    POINT_PANEL_WHEEL_ANGLE_DIVISOR,
+    POINT_PANEL_WHEEL_ZOOM_IN,
+    POINT_PANEL_WHEEL_ZOOM_OUT,
+    POINT_PANEL_ZOOM_DEFAULT,
+    POINT_PANEL_ZOOM_EPSILON,
+    POINT_PANEL_ZOOM_MAX,
+    POINT_PANEL_ZOOM_MIN,
+    POINT_PANEL_INITIAL_BASE_SCALE,
+    POINT_BLEND_COLOR_MIN,
+    POINT_BLEND_COLOR_MAX,
+    POINT_BLEND_MIDPOINT,
+    POINT_PANEL_COLOR_CHANNELS,
     POINT_ERROR_HIGH_RGB,
     POINT_ERROR_LOW_RGB,
     POINT_ERROR_MID_RGB,
@@ -39,7 +55,7 @@ from archphotolab.constants import (
     UI_FONT_FAMILY,
     UI_TITLE_FONT_SIZE,
     UI_TITLE_OFFSET_Y,
-)
+    )
 from archphotolab.constants import MSG_IMAGE_RGB_ONLY
 
 
@@ -74,11 +90,11 @@ class ImagePanel(QWidget):
         self._panning = False
         self._pan_last = (0.0, 0.0)
 
-        self._base_scale = 1.0
-        self._zoom = 1.0
-        self._min_zoom = 0.2
-        self._max_zoom = 8.0
-        self._display_scale = 1.0
+        self._base_scale = POINT_PANEL_INITIAL_BASE_SCALE
+        self._zoom = POINT_PANEL_ZOOM_DEFAULT
+        self._min_zoom = POINT_PANEL_ZOOM_MIN
+        self._max_zoom = POINT_PANEL_ZOOM_MAX
+        self._display_scale = POINT_PANEL_INITIAL_BASE_SCALE
 
         self._img_left = 0
         self._img_top = 0
@@ -87,7 +103,7 @@ class ImagePanel(QWidget):
         self._pan_offset_x = 0
         self._pan_offset_y = 0
 
-        self.setMinimumSize(260, 260)
+        self.setMinimumSize(*MIN_PANEL_SIZE)
         self.setMouseTracking(True)
         self.setCursor(Qt.CrossCursor)
 
@@ -105,7 +121,7 @@ class ImagePanel(QWidget):
             self.update()
             return
 
-        if image.ndim != 3 or image.shape[2] != 3:
+        if image.ndim != POINT_PANEL_COLOR_CHANNELS or image.shape[2] != IMAGE_COLOR_CHANNEL_INDEX + 1:
             raise ValueError(MSG_IMAGE_RGB_ONLY)
 
         qimg = QImage(
@@ -153,7 +169,7 @@ class ImagePanel(QWidget):
         return self._zoom, self._pan_offset_x, self._pan_offset_y
 
     def reset_view_state(self) -> None:
-        self._zoom = 1.0
+        self._zoom = POINT_PANEL_ZOOM_DEFAULT
         self._pan_offset_x = 0
         self._pan_offset_y = 0
         self._update_draw_geometry()
@@ -172,8 +188,11 @@ class ImagePanel(QWidget):
 
     def _update_draw_geometry(self) -> None:
         if self._pixmap is None:
-            self._display_scale = 1.0
-            self._base_scale = 1.0
+            self._display_scale = max(
+                POINT_PANEL_INITIAL_BASE_SCALE,
+                POINT_PANEL_ZOOM_EPSILON,
+            )
+            self._base_scale = POINT_PANEL_INITIAL_BASE_SCALE
             self._img_left = 0
             self._img_top = 0
             self._img_width = max(1, self._image_width)
@@ -187,7 +206,7 @@ class ImagePanel(QWidget):
         target_w = self.width()
 
         self._base_scale = pix.width() / max(self._image_width, 1)
-        self._display_scale = max(self._base_scale * self._zoom, 1e-6)
+        self._display_scale = max(self._base_scale * self._zoom, POINT_PANEL_ZOOM_EPSILON)
         base_left = (target_w - pix.width()) // 2
         base_top = PANEL_TOP_BANNER_HEIGHT + (target_h - pix.height()) // 2
 
@@ -239,28 +258,28 @@ class ImagePanel(QWidget):
         if error <= ERROR_GRADE_WARNING:
             return POINT_ERROR_LOW_RGB
         ratio = (error - ERROR_GRADE_WARNING) / max(max_error, ERROR_GRADE_WARNING)
-        if ratio <= 0.5:
-            return self._blend_color(POINT_ERROR_LOW_RGB, POINT_ERROR_MID_RGB, ratio * 2)
-        return self._blend_color(POINT_ERROR_MID_RGB, POINT_ERROR_HIGH_RGB, (ratio - 0.5) * 2)
+        if ratio <= POINT_BLEND_MIDPOINT:
+            return self._blend_color(POINT_ERROR_LOW_RGB, POINT_ERROR_MID_RGB, ratio / POINT_BLEND_MIDPOINT)
+        return self._blend_color(POINT_ERROR_MID_RGB, POINT_ERROR_HIGH_RGB, (ratio - POINT_BLEND_MIDPOINT) / POINT_BLEND_MIDPOINT)
 
     @staticmethod
     def _blend_color(low: tuple[int, int, int], high: tuple[int, int, int], ratio: float) -> tuple[int, int, int]:
-        r = max(0, min(255, int(low[0] + (high[0] - low[0]) * ratio)))
-        g = max(0, min(255, int(low[1] + (high[1] - low[1]) * ratio)))
-        b = max(0, min(255, int(low[2] + (high[2] - low[2]) * ratio)))
+        r = max(POINT_BLEND_COLOR_MIN, min(POINT_BLEND_COLOR_MAX, int(low[0] + (high[0] - low[0]) * ratio)))
+        g = max(POINT_BLEND_COLOR_MIN, min(POINT_BLEND_COLOR_MAX, int(low[1] + (high[1] - low[1]) * ratio)))
+        b = max(POINT_BLEND_COLOR_MIN, min(POINT_BLEND_COLOR_MAX, int(low[2] + (high[2] - low[2]) * ratio)))
         return r, g, b
 
     def wheelEvent(self, event) -> None:
         if self._pixmap is None:
             return
-        angle = event.angleDelta().y() / 120.0
+        angle = event.angleDelta().y() / POINT_PANEL_WHEEL_ANGLE_DIVISOR
         if angle == 0:
             return
 
-        factor = 1.15 if angle > 0 else 0.9
+        factor = POINT_PANEL_WHEEL_ZOOM_IN if angle > 0 else POINT_PANEL_WHEEL_ZOOM_OUT
         before_zoom = self._zoom
         after_zoom = _clamp(self._zoom * factor, self._min_zoom, self._max_zoom)
-        if abs(after_zoom - before_zoom) < 1e-6:
+        if abs(after_zoom - before_zoom) < POINT_PANEL_ZOOM_EPSILON:
             return
 
         cursor_x = event.position().x()
@@ -272,8 +291,8 @@ class ImagePanel(QWidget):
         base_scale = pix.width() / max(self._image_width, 1)
 
         before_scale = self._display_scale
-        img_x = (cursor_x - self._img_left) / max(before_scale, 1e-6)
-        img_y = (cursor_y - self._img_top) / max(before_scale, 1e-6)
+        img_x = (cursor_x - self._img_left) / max(before_scale, POINT_PANEL_ZOOM_EPSILON)
+        img_y = (cursor_y - self._img_top) / max(before_scale, POINT_PANEL_ZOOM_EPSILON)
 
         self._zoom = after_zoom
         self._display_scale = base_scale * self._zoom
@@ -297,8 +316,8 @@ class ImagePanel(QWidget):
             return False
         dx = x - self._pan_last[0]
         dy = y - self._pan_last[1]
-        self._pan_offset_x += int(round(dx))
-        self._pan_offset_y += int(round(dy))
+        self._pan_offset_x += int(round(dx, ndigits=POINT_PANEL_MOUSE_DRAG_ROUNDING))
+        self._pan_offset_y += int(round(dy, ndigits=POINT_PANEL_MOUSE_DRAG_ROUNDING))
         self._pan_last = (x, y)
         self._update_draw_geometry()
         self.update()
@@ -384,7 +403,7 @@ class ImagePanel(QWidget):
 
         if self._pixmap is None:
             painter.setPen(QColor(*IMAGE_PANEL_HINT_TEXT_RGB))
-            painter.setFont(QFont(UI_FONT_FAMILY, 10))
+            painter.setFont(QFont(UI_FONT_FAMILY, POINT_PANEL_HINT_FONT_SIZE))
             painter.drawText(IMAGE_PANEL_HINT_X, self.height() // 2, IMAGE_PANEL_HINT_TEXT)
             return
 

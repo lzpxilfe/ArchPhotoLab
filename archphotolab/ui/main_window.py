@@ -94,6 +94,8 @@ from archphotolab.constants import (
     LABEL_VIEW_MODE,
     MIN_ALIGNMENT_POINTS,
     MIN_PANEL_SIZE,
+    OVERLAY_ALPHA_MAX,
+    OVERLAY_ALPHA_MIN,
     MSG_ALIGNMENT_COMPLETE_WITH_MODE_FMT,
     MSG_ALIGNMENT_ERROR_FMT,
     MSG_ALIGNMENT_RESULT_INVALID,
@@ -109,7 +111,6 @@ from archphotolab.constants import (
     MSG_FLATTEN_CALC_FAIL_FMT,
     MSG_FLATTEN_PRESET_APPLIED_FMT,
     MSG_FLATTEN_PRESET_INVALID,
-    MSG_FLATTEN_REQUIRED,
     MSG_FLATTEN_REQUIRED,
     MSG_LOAD_MISSING_PLAN,
     MSG_LOAD_MISSING_PHOTO,
@@ -172,6 +173,9 @@ from archphotolab.constants import (
     SPLIT_VIEW_DEFAULT_RATIO,
     SPLIT_VIEW_MAX_RATIO,
     SPLIT_VIEW_MIN_RATIO,
+    SPLIT_VIEW_PERCENT_SCALE,
+    SPLIT_VIEW_RATIO_MAX_PERCENT,
+    SPLIT_VIEW_RATIO_MIN_PERCENT,
     STATUS_FILES_PREFIX,
     STATUS_FILES_SEPARATOR,
     STATUS_GUIDE_PREFIX,
@@ -207,10 +211,6 @@ from archphotolab.constants import (
     WORKFLOW_POINT_EXCLUDE_HELP,
     WORKFLOW_ROW3_SPACING,
     WORKFLOW_ROW_SPACING,
-    WORKFLOW_STEP_ALIGNMENT_DONE,
-    WORKFLOW_STEP_FLATTEN_READY,
-    WORKFLOW_STEP_EXPORT_READY,
-    WORKFLOW_STEP_POINTS,
     VIEW_BUTTON_ALIGN,
     VIEW_BUTTON_ALIGN_WITH_SELECTED_EXCLUDED,
     VIEW_BUTTON_EXPORT,
@@ -226,19 +226,10 @@ from archphotolab.constants import (
     VIEW_MODE_PHOTO,
     VIEW_TOGGLE_COMPARE_FLAT,
     VIEW_TOGGLE_COMPARE_SPLIT,
-    WORKFLOW_STEP_1_LOAD_PHOTO,
-    WORKFLOW_STEP_1_LOAD_PLAN,
-    WORKFLOW_STEP_POINTS,
-    WORKFLOW_STEP_ALIGNMENT_READY,
-    WORKFLOW_STEP_ALIGNMENT_DONE,
-    VIEW_BUTTON_FLATTEN,
     JSON_CHARSET_ENCODING,
     PALETTE,
-    MSG_FLATTEN_CALC_FAIL_FMT,
     VIEW_LABEL_PHOTO,
     VIEW_LABEL_PLAN,
-    STATUS_STEP_ALIGNMENT,
-    MSG_ALIGNMENT_MODE_CHANGED,
 )
 from archphotolab.core.export import (
     export_paths,
@@ -371,7 +362,7 @@ class MainWindow(QMainWindow):
 
         row3.addWidget(QLabel(LABEL_OVERLAY_ALPHA))
         self.slider_alpha = QSlider(Qt.Horizontal)
-        self.slider_alpha.setRange(0, 100)
+        self.slider_alpha.setRange(OVERLAY_ALPHA_MIN, OVERLAY_ALPHA_MAX)
         self.slider_alpha.setValue(int(self.state.overlay_alpha * ALPHA_PERCENT_SCALE))
         self.slider_alpha.valueChanged.connect(self._on_alpha_changed)
         self.lbl_alpha = QLabel(f"{int(self.state.overlay_alpha * ALPHA_PERCENT_SCALE)}%")
@@ -409,10 +400,10 @@ class MainWindow(QMainWindow):
         row4.addWidget(self.lbl_flat_intensity)
         row4.addWidget(QLabel(LABEL_FLATTEN_SPLIT))
         self.slider_split_ratio = QSlider(Qt.Horizontal)
-        self.slider_split_ratio.setRange(5, 95)
-        self.slider_split_ratio.setValue(int(self.state.split_ratio * 100))
+        self.slider_split_ratio.setRange(SPLIT_VIEW_RATIO_MIN_PERCENT, SPLIT_VIEW_RATIO_MAX_PERCENT)
+        self.slider_split_ratio.setValue(int(self.state.split_ratio * SPLIT_VIEW_PERCENT_SCALE))
         self.slider_split_ratio.valueChanged.connect(self._on_split_ratio_changed)
-        self.lbl_split_ratio = QLabel(f"{int(self.state.split_ratio * 100)}%")
+        self.lbl_split_ratio = QLabel(f"{int(self.state.split_ratio * SPLIT_VIEW_PERCENT_SCALE)}%")
         self.slider_split_ratio.setMinimumWidth(SLIDER_MIN_WIDTH)
         row4.addWidget(self.slider_split_ratio)
         row4.addWidget(self.lbl_split_ratio)
@@ -611,13 +602,13 @@ class MainWindow(QMainWindow):
         header_font.setPointSize(UI_TITLE_FONT_SIZE)
         header_font.setBold(True)
         header.setFont(header_font)
-        header.setStyleSheet(f"padding: {IMAGE_PANEL_HEADER_PADDING}; color: #e6edf7;")
+        header.setStyleSheet(f"padding: {IMAGE_PANEL_HEADER_PADDING}; color: {PALETTE['text']};")
 
         view = ImagePanel(title=title, editable=editable)
         view.setMinimumSize(*MIN_PANEL_SIZE)
         info = QLabel(IMAGE_PANEL_EMPTY_TEXT)
         info.setWordWrap(True)
-        info.setStyleSheet(f"padding: {IMAGE_PANEL_INFO_PADDING}; color: #96a9c1;")
+        info.setStyleSheet(f"padding: {IMAGE_PANEL_INFO_PADDING}; color: {PALETTE['muted']};")
 
         layout.addWidget(header)
         layout.addWidget(view, stretch=1)
@@ -634,9 +625,9 @@ class MainWindow(QMainWindow):
             self.cmb_alignment_mode.setCurrentText(ALIGNMENT_MODE_LABELS[DEFAULT_ALIGNMENT_MODE])
 
     def _on_split_ratio_changed(self, value: int) -> None:
-        ratio = max(SPLIT_VIEW_MIN_RATIO, min(SPLIT_VIEW_MAX_RATIO, value / 100.0))
+        ratio = max(SPLIT_VIEW_MIN_RATIO, min(SPLIT_VIEW_MAX_RATIO, value / float(SPLIT_VIEW_PERCENT_SCALE)))
         self.state.split_ratio = ratio
-        self.lbl_split_ratio.setText(f"{int(ratio * 100)}%")
+        self.lbl_split_ratio.setText(f"{int(ratio * SPLIT_VIEW_PERCENT_SCALE)}%")
         self._refresh_ui()
 
     def _on_flatten_intensity_changed(self, value: int) -> None:
@@ -912,18 +903,17 @@ class MainWindow(QMainWindow):
 
     def _run_alignment(self) -> None:
         success, result, error = self.controller.run_alignment()
-        self._handle_alignment_result(success, result, error, "정합 완료")
+        self._handle_alignment_result(success, result, error)
 
     def _run_alignment_excluding_selected_point(self) -> None:
         success, result, error = self.controller.run_alignment_excluding_selected_pair()
-        self._handle_alignment_result(success, result, error, "선택점 제외 정합 완료")
+        self._handle_alignment_result(success, result, error)
 
     def _handle_alignment_result(
         self,
         success: bool,
         result,
         error: Optional[str],
-        fallback_message: str,
     ) -> None:
         if not success:
             fallback = MSG_ALIGNMENT_ERROR_FMT.format(error=MSG_ALIGNMENT_CONSTRAINT_FAILED)
@@ -952,7 +942,7 @@ class MainWindow(QMainWindow):
         quality = self.state.quality_profile
         self._set_message(
             MSG_ALIGNMENT_COMPLETE_WITH_MODE_FMT.format(
-                mode=ALIGNMENT_MODE_LABELS.get(self.state.alignment_mode, fallback_message),
+                mode=ALIGNMENT_MODE_LABELS.get(self.state.alignment_mode, self.state.alignment_mode),
                 avg=quality.average_error or 0.0,
                 median=quality.median_error or 0.0,
                 max=quality.max_error or 0.0,
@@ -1100,7 +1090,7 @@ class MainWindow(QMainWindow):
             self.slider_alpha.setValue(int(self.state.overlay_alpha * ALPHA_PERCENT_SCALE))
             self.chk_compare_flat.setChecked(self.state.show_flat_photo)
             self.chk_compare_split.setChecked(self.state.show_split_compare)
-            self.slider_split_ratio.setValue(int(self.state.split_ratio * 100))
+            self.slider_split_ratio.setValue(int(self.state.split_ratio * SPLIT_VIEW_PERCENT_SCALE))
             self.cmb_view.setCurrentText(self._view_mode_label(self.state.result_view_mode))
             self._set_combo_by_value(self.state.alignment_mode, is_alignment=True)
             self.cmb_flatten_preset.setCurrentText(self.state.flatten_preset)

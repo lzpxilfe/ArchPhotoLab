@@ -28,6 +28,7 @@ DEFAULT_ALIGNMENT_MODE: Final[str] = ALIGNMENT_MODE_HOMOGRAPHY
 # Layout
 DEFAULT_WINDOW_SIZE: Final[tuple[int, int]] = (1660, 1020)
 MIN_PANEL_SIZE: Final[tuple[int, int]] = (260, 260)
+PANEL_MIN_SIZE: Final[tuple[int, int]] = MIN_PANEL_SIZE
 ROOT_LAYOUT_MARGIN: Final[int] = 10
 ROOT_LAYOUT_SPACING: Final[int] = 8
 WORKFLOW_SECTION_SPACING: Final[int] = 8
@@ -53,12 +54,20 @@ JSON_CHARSET_ENCODING: Final[str] = "utf-8"
 # Alignment / geometry
 MIN_ALIGNMENT_POINTS: Final[int] = 4
 HOMOGRAPHY_METHOD: Final[int] = 0
+GEOMETRY_DEFAULT_RANSAC_THRESHOLD: Final[float] = 0.0
+GEOMETRY_NUMERIC_EPSILON: Final[float] = 1e-6
 OVERLAY_ALPHA_DEFAULT: Final[float] = 0.45
 OVERLAY_ALPHA_MIN: Final[int] = 0
 OVERLAY_ALPHA_MAX: Final[int] = 100
 ALPHA_PERCENT_SCALE: Final[int] = 100
+SPLIT_VIEW_PERCENT_SCALE: Final[int] = 100
 ERROR_WARNING_THRESHOLD_PX: Final[float] = 12.0
 ERROR_WARNING_PERCENTILE: Final[float] = 95.0
+QUALITY_PERCENTILE_SAMPLE_MIN: Final[int] = 3
+QUALITY_MAD_SAMPLE_MIN: Final[int] = 4
+QUALITY_MAD_SCALE_FACTOR: Final[float] = 3.4826
+QUALITY_MAD_EMPTY_MULTIPLIER: Final[float] = 3.0
+ALIGNMENT_SCORE_OFFSET: Final[float] = 1.0
 ERROR_GRADE_GOOD: Final[float] = 3.0
 ERROR_GRADE_WARNING: Final[float] = 8.0
 QUALITY_GRADE_GOOD: Final[str] = "좋음"
@@ -70,6 +79,15 @@ WORKFLOW_STAGE_LOAD: Final[str] = "1) 사진/도면 로드"
 WORKFLOW_STAGE_POINTS: Final[str] = "2) 대응점 등록"
 WORKFLOW_STAGE_ALIGNMENT: Final[str] = "3) 정합 계산"
 WORKFLOW_STAGE_EXPORT: Final[str] = "4) 내보내기"
+WORKFLOW_ALIGNMENT_EXCLUDE_SUFFIX: Final[str] = " (점 제외 테스트)"
+POINT_HISTORY_LIMIT: Final[int] = 200
+ALIGNMENT_RANSAC_THRESHOLD_DEFAULT: Final[float] = 3.0
+TRANSFORM_MATRIX_SHAPE_HOMOGRAPHY: Final[tuple[int, int]] = (3, 3)
+TRANSFORM_MATRIX_SHAPE_AFFINE: Final[tuple[int, int]] = (2, 3)
+TRANSFORM_MATRIX_SHAPES: Final[tuple[tuple[int, int], ...]] = (
+    TRANSFORM_MATRIX_SHAPE_HOMOGRAPHY,
+    TRANSFORM_MATRIX_SHAPE_AFFINE,
+)
 
 # View mode keys
 VIEW_MODE_PHOTO: Final[str] = "photo"
@@ -204,6 +222,8 @@ MSG_ALIGNMENT_COMPLETE_FMT: Final[str] = "자동 정합 완료: 평균 {avg:.2f}
 MSG_ALIGNMENT_COMPLETE_WITH_MODE_FMT: Final[str] = (
     "정합 완료({mode}): 평균 {avg:.2f}px, 중앙값 {median:.2f}px, 최대 {max:.2f}px"
 )
+MSG_ALIGNMENT_COMPLETE_DEFAULT: Final[str] = "정합 완료"
+MSG_ALIGNMENT_EXCLUDE_COMPLETE_DEFAULT: Final[str] = "선택점 제외 정합 완료"
 MSG_ALIGNMENT_MODE_CHANGED: Final[str] = "정합 모드가 바뀌어 이전 정합 결과가 초기화됩니다."
 MSG_ALIGNMENT_MODE_UNSUPPORTED: Final[str] = "지원하지 않는 정합 모드입니다."
 MSG_ALIGNMENT_ERROR_FMT: Final[str] = "정합 실패: {error}"
@@ -267,6 +287,7 @@ MSG_FATAL_LOG_PREFIX: Final[str] = "Fatal error during startup"
 
 MSG_PNG_SAVE_FAIL_FMT: Final[str] = "PNG 저장 실패: {error}"
 MSG_IMAGE_RGB_ONLY: Final[str] = "이미지는 RGB 형식이어야 합니다."
+MSG_TRANSFORM_MATRIX_MISSING: Final[str] = "transform_matrix가 없습니다."
 
 MSG_QUALITY_SUMMARY_FMT: Final[str] = (
     "평균 오차 {avg:.2f}px / 중앙값 {median:.2f}px / 최대 오차 {max:.2f}px (오차 큰 점: {warn_count}개)"
@@ -283,6 +304,16 @@ MSG_POINT_UNDO_DONE: Final[str] = "점 작업을 되돌렸습니다."
 MSG_POINT_REDO_DONE: Final[str] = "취소했던 점 작업을 되살렸습니다."
 
 ERROR_MESSAGE_PREFIX: Final[str] = "⚠️ "
+
+# Image panel interaction / interaction defaults
+POINT_PANEL_ZOOM_DEFAULT: Final[float] = 1.0
+POINT_PANEL_ZOOM_MIN: Final[float] = 0.2
+POINT_PANEL_ZOOM_MAX: Final[float] = 8.0
+POINT_PANEL_WHEEL_ZOOM_IN: Final[float] = 1.15
+POINT_PANEL_WHEEL_ZOOM_OUT: Final[float] = 0.9
+POINT_PANEL_ZOOM_EPSILON: Final[float] = 1e-6
+POINT_PANEL_WHEEL_ANGLE_DIVISOR: Final[float] = 120.0
+POINT_PANEL_HINT_FONT_SIZE: Final[int] = 10
 
 FILE_SELECT_PHOTO_TITLE: Final[str] = "드론 사진 불러오기"
 FILE_SELECT_PLAN_TITLE: Final[str] = "도면 불러오기"
@@ -321,6 +352,9 @@ FLATTEN_PRESETS: Final[dict[str, dict[str, float]]] = {
 SPLIT_VIEW_DEFAULT_RATIO: Final[float] = 0.5
 SPLIT_VIEW_MIN_RATIO: Final[float] = 0.05
 SPLIT_VIEW_MAX_RATIO: Final[float] = 0.95
+SPLIT_VIEW_RATIO_MIN_PERCENT: Final[int] = int(SPLIT_VIEW_MIN_RATIO * SPLIT_VIEW_PERCENT_SCALE)
+SPLIT_VIEW_RATIO_MAX_PERCENT: Final[int] = int(SPLIT_VIEW_MAX_RATIO * SPLIT_VIEW_PERCENT_SCALE)
+
 
 # Color theme
 PALETTE: Final[dict[str, str]] = {
@@ -421,12 +455,27 @@ SPLASH_TEXT_HEIGHT: Final[int] = 70
 # Image processing
 IMAGE_EXT_MIN: Final[float] = 0.0
 IMAGE_EXT_MAX: Final[float] = 255.0
+IMAGE_VALUE_MAX: Final[float] = IMAGE_EXT_MAX
+IMAGE_VALUE_COUNT: Final[int] = 256
+IMAGE_VALUE_MIN_INT: Final[int] = 0
+IMAGE_VALUE_MAX_INT: Final[int] = 255
+IMAGE_VALUE_LOWER_CLIP: Final[float] = IMAGE_EXT_MIN
+IMAGE_VALUE_UPPER_CLIP: Final[float] = IMAGE_EXT_MAX
 RGB_CHANNELS_EXPECTED: Final[int] = 3
+IMAGE_COLOR_CHANNEL_INDEX: Final[int] = 2
 KERNEL_MIN_SIZE: Final[int] = 11
+BACKGROUND_KERNEL_MIN: Final[int] = 31
 BACKGROUND_ESTIMATION_SCALE: Final[float] = 0.10
 BACKGROUND_EPSILON: Final[float] = 1e-6
 CLAHE_CLIP_LIMIT: Final[float] = 2.0
 CLAHE_TILE: Final[tuple[int, int]] = (8, 8)
+POINT_PANEL_COLOR_CHANNELS: Final[int] = 3
+POINT_PANEL_EPSILON: Final[float] = 1e-6
+POINT_PANEL_INITIAL_BASE_SCALE: Final[float] = 1.0
+POINT_BLEND_COLOR_MIN: Final[int] = 0
+POINT_BLEND_COLOR_MAX: Final[int] = 255
+POINT_BLEND_MIDPOINT: Final[float] = 0.5
+POINT_EDITOR_BUTTON_SPACING: Final[int] = 6
 
 
 class ProjectKeys:

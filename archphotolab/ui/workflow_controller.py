@@ -14,6 +14,7 @@ from archphotolab.constants import (
     MSG_ALIGNMENT_REQUIRE_IMAGES,
     MSG_ALIGNMENT_REQUIRE_POINTS_FMT,
     MSG_ALIGNMENT_RESULT_INVALID,
+    WORKFLOW_ALIGNMENT_EXCLUDE_SUFFIX,
     MIN_ALIGNMENT_POINTS,
     WORKFLOW_STAGE_ALIGNMENT,
     WORKFLOW_STAGE_POINTS,
@@ -224,7 +225,7 @@ class WorkflowController:
             )
 
         if excluded_indices:
-            self.state.workflow_stage = f"{WORKFLOW_STAGE_ALIGNMENT} (점 제외 테스트)"
+            self.state.workflow_stage = f"{WORKFLOW_STAGE_ALIGNMENT}{WORKFLOW_ALIGNMENT_EXCLUDE_SUFFIX}"
         else:
             self.state.workflow_stage = WORKFLOW_STAGE_ALIGNMENT
 

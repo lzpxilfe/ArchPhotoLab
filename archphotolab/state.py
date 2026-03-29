@@ -7,6 +7,8 @@ import numpy as np
 
 from archphotolab.constants import (
     DEFAULT_ALIGNMENT_MODE,
+    POINT_HISTORY_LIMIT,
+    POINT_PANEL_ZOOM_DEFAULT,
     FLATTEN_PRESET_RECORD,
     FLATTEN_PRESET_DEFAULT,
     FLATTEN_PRESET_INTENSITY_DEFAULT,
@@ -87,10 +89,10 @@ class AppState:
     last_project_file: str = ""
 
     workflow_stage: str = ""
-    photo_view_zoom: float = 1.0
+    photo_view_zoom: float = POINT_PANEL_ZOOM_DEFAULT
     photo_view_pan_x: int = 0
     photo_view_pan_y: int = 0
-    plan_view_zoom: float = 1.0
+    plan_view_zoom: float = POINT_PANEL_ZOOM_DEFAULT
     plan_view_pan_x: int = 0
     plan_view_pan_y: int = 0
     point_history: List[PointSnapshot] = field(default_factory=list)
@@ -112,7 +114,7 @@ class AppState:
     def push_point_history(self) -> None:
         self.point_history.append(self.snapshot_point_state())
         self.point_redo.clear()
-        if len(self.point_history) > 200:
+        if len(self.point_history) > POINT_HISTORY_LIMIT:
             self.point_history.pop(0)
 
     def restore_point_snapshot(self, snapshot: PointSnapshot) -> None:
