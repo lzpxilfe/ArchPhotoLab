@@ -361,19 +361,20 @@ SPLIT_VIEW_RATIO_MAX_PERCENT: Final[int] = int(SPLIT_VIEW_MAX_RATIO * SPLIT_VIEW
 
 # Color theme
 PALETTE: Final[dict[str, str]] = {
-    "primary": "#151d2b",
-    "secondary": "#23304a",
-    "accent": "#6a8cff",
-    "text": "#e6edf7",
-    "muted": "#96a9c1",
-    "panel": "#2b3d58",
-    "danger": "#ff8f8f",
+    "primary": "#0B0F19",
+    "secondary": "#111827",
+    "accent": "#38BDF8",
+    "accent_indigo": "#6366F1",
+    "text": "#F9FAFB",
+    "muted": "#9CA3AF",
+    "panel": "#1F2937",
+    "danger": "#EF4444",
 }
 
-IMAGE_PANEL_BACKGROUND_RGB: Final[tuple[int, int, int]] = (43, 61, 88)
-IMAGE_PANEL_BORDER_RGB: Final[tuple[int, int, int]] = (107, 140, 177)
-IMAGE_PANEL_TITLE_BAR_RGB: Final[tuple[int, int, int]] = (31, 43, 64)
-IMAGE_PANEL_TEXT_RGB: Final[tuple[int, int, int]] = (224, 233, 248)
+IMAGE_PANEL_BACKGROUND_RGB: Final[tuple[int, int, int]] = (11, 15, 25)
+IMAGE_PANEL_BORDER_RGB: Final[tuple[int, int, int]] = (31, 41, 55)
+IMAGE_PANEL_TITLE_BAR_RGB: Final[tuple[int, int, int]] = (17, 24, 39)
+IMAGE_PANEL_TEXT_RGB: Final[tuple[int, int, int]] = (249, 250, 251)
 IMAGE_PANEL_HINT_TEXT: Final[str] = "이미지를 불러와 주세요"
 IMAGE_PANEL_HINT_TEXT_RGB: Final[tuple[int, int, int]] = (180, 188, 205)
 

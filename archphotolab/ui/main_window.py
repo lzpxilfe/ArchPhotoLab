@@ -324,6 +324,7 @@ class MainWindow(QMainWindow):
         self.btn_point_mode.setChecked(True)
         self.btn_point_mode.toggled.connect(self._toggle_point_mode)
         self.btn_align = QPushButton(VIEW_BUTTON_ALIGN)
+        self.btn_align.setObjectName("BtnPrimaryAlign")
         self.btn_align.clicked.connect(self._run_alignment)
         self.btn_align_skip = QPushButton(VIEW_BUTTON_ALIGN_WITH_SELECTED_EXCLUDED)
         self.btn_align_skip.clicked.connect(self._run_alignment_excluding_selected_point)
@@ -351,6 +352,7 @@ class MainWindow(QMainWindow):
         row2.addWidget(self.btn_delete_point)
         row2.addWidget(self.point_editor)
         self.btn_export = QPushButton(VIEW_BUTTON_EXPORT)
+        self.btn_export.setObjectName("BtnPrimaryExport")
         row2.addWidget(self.btn_export)
         row2.addStretch()
         self.btn_export.clicked.connect(self._export_pngs)
@@ -502,8 +504,8 @@ class MainWindow(QMainWindow):
             }}
             QGroupBox {{
                 background: {pal["secondary"]};
-                border: 1px solid {pal["accent"]}{GROUPBOX_BORDER_ALPHA_SUFFIX};
-                border-radius: {GROUPBOX_BORDER_RADIUS}px;
+                border: 1px solid rgba(255, 255, 255, 0.08);
+                border-radius: 12px;
                 margin-top: {GROUPBOX_MARGIN_TOP}px;
                 padding: {GROUPBOX_PADDING_TOP}px {GROUPBOX_PADDING_RIGHT}px {GROUPBOX_PADDING_BOTTOM}px {GROUPBOX_PADDING_LEFT}px;
             }}
@@ -517,75 +519,164 @@ class MainWindow(QMainWindow):
             }}
             QPushButton {{
                 background: {pal["panel"]};
-                border: 1px solid {pal["accent"]}{GROUPBOX_TITLE_BORDER_ALPHA_SUFFIX};
+                border: 1px solid rgba(255, 255, 255, 0.1);
                 border-radius: {BUTTON_BORDER_RADIUS}px;
                 padding: {BUTTON_PADDING_Y}px {BUTTON_PADDING_X}px;
                 font-weight: {BUTTON_FONT_WEIGHT};
                 min-width: {CONTROL_MIN_WIDTH}px;
                 min-height: {CONTROL_MIN_HEIGHT}px;
+                color: {pal["text"]};
             }}
             QPushButton:hover {{
-                background: {pal["accent"]}{GROUPBOX_BORDER_ALPHA_SUFFIX};
+                background: rgba(255, 255, 255, 0.08);
                 border-color: {pal["accent"]};
             }}
             QPushButton:checked {{
-                background: {pal["accent"]}{GROUPBOX_TITLE_BORDER_ALPHA_SUFFIX};
+                background: {pal["accent_indigo"]};
+                border-color: {pal["accent_indigo"]};
             }}
             QPushButton:pressed {{
-                background: {pal["accent"]}33;
+                background: rgba(255, 255, 255, 0.04);
             }}
             QPushButton:disabled {{
-                background: {pal["primary"]};
-                border-color: {pal["panel"]};
+                background: rgba(255, 255, 255, 0.02);
+                border-color: rgba(255, 255, 255, 0.04);
                 color: {pal["muted"]};
+            }}
+            #BtnPrimaryAlign, #BtnPrimaryExport {{
+                background-color: {pal["accent_indigo"]};
+                color: white;
+                border: none;
+            }}
+            #BtnPrimaryAlign:hover, #BtnPrimaryExport:hover {{
+                background-color: #4F46E5;
+            }}
+            #BtnPrimaryAlign:pressed, #BtnPrimaryExport:pressed {{
+                background-color: #3730A3;
             }}
             QComboBox {{
                 background: {pal["panel"]};
-                border: {COMBO_BORDER_WIDTH}px solid {pal["accent"]}55;
+                border: 1px solid rgba(255, 255, 255, 0.1);
                 border-radius: {COMBO_BORDER_RADIUS}px;
                 min-height: {COMBO_MIN_HEIGHT}px;
                 min-width: {COMBO_MIN_WIDTH}px;
                 padding: {COMBO_PADDING_Y}px {COMBO_PADDING_X}px;
+                color: {pal["text"]};
+            }}
+            QComboBox:hover {{
+                border-color: {pal["accent"]};
+            }}
+            QComboBox::drop-down {{
+                border: none;
+                subcontrol-origin: padding;
+                subcontrol-position: top right;
+                width: 20px;
             }}
             QComboBox QAbstractItemView {{
                 background: {pal["secondary"]};
-                selection-background-color: {pal["accent"]}55;
+                border: 1px solid rgba(255, 255, 255, 0.15);
+                border-radius: 8px;
+                selection-background-color: {pal["accent_indigo"]};
+                selection-color: white;
                 color: {pal["text"]};
             }}
             QSlider::groove:horizontal {{
-                border: 1px solid {pal["accent"]}55;
-                height: {SLIDER_GROOVE_HEIGHT}px;
-                border-radius: {SLIDER_GROOVE_RADIUS}px;
+                height: 6px;
                 background: {pal["panel"]};
+                border-radius: 3px;
             }}
             QSlider::sub-page:horizontal {{
                 background: {pal["accent"]};
-                border-radius: {SLIDER_GROOVE_RADIUS}px;
+                border-radius: 3px;
             }}
             QSlider::add-page:horizontal {{
                 background: {pal["panel"]};
             }}
             QSlider::handle:horizontal {{
+                background: {pal["text"]};
+                border: 2px solid {pal["accent"]};
+                width: 16px;
+                height: 16px;
+                margin: -5px 0;
+                border-radius: 8px;
+            }}
+            QSlider::handle:horizontal:hover {{
                 background: {pal["accent"]};
-                border: 1px solid {pal["accent"]}cc;
-                width: {SLIDER_HANDLE_SIZE}px;
-                height: {SLIDER_HANDLE_SIZE}px;
-                margin: {SLIDER_HANDLE_MARGIN_Y}px 0;
-                border-radius: {SLIDER_HANDLE_SIZE // 2}px;
             }}
             QCheckBox {{
                 spacing: {CHECKBOX_SPACING}px;
                 color: {pal["text"]};
             }}
-            #IntroCard {{
-                background: {pal["secondary"]};
+            QCheckBox::indicator {{
+                width: 18px;
+                height: 18px;
+                border: 1px solid rgba(255, 255, 255, 0.2);
+                border-radius: 4px;
+                background-color: {pal["panel"]};
             }}
-            #StatusPanel, #WorkPanel {{
-                background: {pal["secondary"]};
-                border: 1px solid {pal["accent"]}22;
+            QCheckBox::indicator:hover {{
+                border-color: {pal["accent"]};
+            }}
+            QCheckBox::indicator:checked {{
+                background-color: {pal["accent_indigo"]};
+                border-color: {pal["accent_indigo"]};
+            }}
+            QFrame.StatusCard {{
+                background-color: {pal["panel"]};
+                border: 1px solid rgba(255, 255, 255, 0.05);
+                border-radius: 10px;
+            }}
+            QFrame.StatusCard:hover {{
+                border-color: rgba(56, 189, 248, 0.3);
+            }}
+            QLabel.CardTitle {{
+                color: {pal["muted"]};
+                font-size: 8pt;
+                font-weight: 700;
+                letter-spacing: 0.8px;
+            }}
+            QLabel.CardValue {{
+                color: {pal["text"]};
+                font-size: 11pt;
+                font-weight: 600;
+            }}
+            QLabel.CardSubValue {{
+                color: {pal["muted"]};
+                font-size: 9pt;
+            }}
+            #StatusCardGuide {{
+                background: qlineargradient(x1:0, y1:0, x2:1, y2:0, stop:0 #1E1B4B, stop:1 #312E81);
+                border: 1px solid #4F46E5;
+                border-radius: 10px;
+            }}
+            QLabel.GuideValue {{
+                color: #E0E7FF;
+                font-size: 10pt;
+                font-weight: 500;
+            }}
+            QScrollBar:vertical {{
+                border: none;
+                background: {pal["primary"]};
+                width: 8px;
+                margin: 0;
+            }}
+            QScrollBar::handle:vertical {{
+                background: rgba(255, 255, 255, 0.15);
+                min-height: 20px;
+                border-radius: 4px;
+            }}
+            QScrollBar::handle:vertical:hover {{
+                background: {pal["accent"]};
+            }}
+            QScrollBar::add-line:vertical, QScrollBar::sub-line:vertical {{
+                height: 0px;
             }}
             QMessageBox {{
-                color: {pal["primary"]};
+                background-color: {pal["secondary"]};
+                color: {pal["text"]};
+            }}
+            QMessageBox QPushButton {{
+                min-width: 80px;
             }}
             """,
         )
