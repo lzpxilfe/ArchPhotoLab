@@ -6,6 +6,8 @@ from typing import Optional, Tuple
 import cv2
 import numpy as np
 
+from PIL import Image, ImageOps
+
 from archphotolab.constants import (
     BACKGROUND_EPSILON,
     BACKGROUND_ESTIMATION_SCALE,
@@ -51,10 +53,14 @@ def ensure_supported(path: str) -> None:
 
 def load_rgb_image(path: str) -> np.ndarray:
     ensure_supported(path)
-    img = cv2.imread(path, cv2.IMREAD_COLOR)
-    if img is None:
-        raise ValueError(MSG_IMAGE_LOAD_FAIL_FMT.format(path=path))
-    return cv2.cvtColor(img, cv2.COLOR_BGR2RGB)
+    try:
+        with Image.open(path) as pil_img:
+            pil_img = ImageOps.exif_transpose(pil_img)
+            if pil_img.mode != "RGB":
+                pil_img = pil_img.convert("RGB")
+            return np.array(pil_img)
+    except Exception as e:
+        raise ValueError(MSG_IMAGE_LOAD_FAIL_FMT.format(path=path) + f" (Error: {e})")
 
 
 def blend_overlay(photo_image: np.ndarray, warped_plan_image: np.ndarray, alpha: float) -> np.ndarray:

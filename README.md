@@ -9,6 +9,38 @@ ArchPhotoLab is a desktop tool for archaeology-focused photo processing. It alig
 
 This project is released under `GNU GPL v2.0` and is intended to be openly shared for public-interest archaeological recording and preservation work.
 
+## 🚀 Standalone Executable 빌드 방법 (Windows)
+
+ArchPhotoLab을 단일 실행 파일(`.exe`)로 패키징하여 Python 설치가 없는 환경에서도 편리하게 배포 및 실행할 수 있도록 하는 방법입니다.
+
+### 1. PyInstaller 설치
+터미널(PowerShell 또는 CMD)에서 다음 명령어로 PyInstaller를 설치합니다:
+```bash
+pip install pyinstaller
+```
+
+### 2. 단일 실행 파일 (.exe) 빌드
+프로젝트 루트 폴더에서 아래 명령어를 실행하여 단일 실행 파일로 빌드합니다:
+
+**Windows PowerShell:**
+```powershell
+pyinstaller --noconsole --onefile --icon=icon.png --add-data "icon.png;." --name=ArchPhotoLab main.py
+```
+
+**Windows CMD:**
+```cmd
+pyinstaller --noconsole --onefile --icon=icon.png --add-data "icon.png;." --name=ArchPhotoLab main.py
+```
+
+- `--noconsole` (또는 `-w`): 프로그램 실행 시 백그라운드 콘솔(CMD) 창이 뜨지 않도록 합니다.
+- `--onefile` (또는 `-F`): 종속 라이브러리와 이미지 파일을 하나의 `.exe` 파일로 병합합니다.
+- `--add-data "icon.png;."`: 애플리케이션의 아이콘 파일(`icon.png`)을 빌드된 실행 파일의 리소스 디렉토리에 포함시킵니다.
+
+### 3. 빌드 결과 확인
+빌드가 완료되면 프로젝트 루트에 `dist/` 폴더가 생성되며, 그 안에 `ArchPhotoLab.exe` 파일이 생성됩니다. 이 파일만 복사해서 바로 실행할 수 있습니다.
+
+---
+
 ## What It Does
 
 - Load one photo and one plan image in `PNG`, `JPG`, or `JPEG`.
@@ -151,8 +183,8 @@ ArchPhotoLab/
 
 ## Documentation
 
-- QA checklist: [docs/qa_checklist.md](/Users/hwangjinseo/Desktop/Coding/ArchPhotoLab/docs/qa_checklist.md)
-- Sample templates: [samples/README.md](/Users/hwangjinseo/Desktop/Coding/ArchPhotoLab/samples/README.md)
+- QA checklist: [docs/qa_checklist.md](docs/qa_checklist.md)
+- Sample templates: [samples/README.md](samples/README.md)
 
 ## Known Limits
 
@@ -182,4 +214,4 @@ ArchPhotoLab/
 
 ## License
 
-This repository is licensed under `GNU General Public License v2.0`. See [LICENSE](/Users/hwangjinseo/Desktop/Coding/ArchPhotoLab/LICENSE).
+This repository is licensed under `GNU General Public License v2.0`. See [LICENSE](LICENSE).

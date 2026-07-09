@@ -259,7 +259,7 @@ MSG_EXPORT_MISSING_PLAN: Final[str] = "도면 정합 결과"
 MSG_EXPORT_MISSING_PREFIX: Final[str] = "누락: "
 MSG_EXPORT_SUCCESS_FMT: Final[str] = "PNG 내보내기 완료: {path}"
 MSG_EXPORT_ERROR_FMT: Final[str] = "PNG 내보내기 실패: {error}"
-MSG_EXPORT_RESULT_MESSAGE: Final[str] = "저장된 파일:\\n{message}\\n\\n폴더: {path}"
+MSG_EXPORT_RESULT_MESSAGE: Final[str] = "저장된 파일:\n{message}\n\n폴더: {path}"
 MSG_EXPORT_NO_IMAGE: Final[str] = "저장할 이미지가 없습니다."
 MSG_EXPORT_IMAGE_NOT_RGB: Final[str] = "RGB 이미지만 저장 가능합니다."
 

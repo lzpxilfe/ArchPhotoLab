@@ -28,13 +28,35 @@ def now_timestamp() -> str:
     return datetime.now().strftime(DEFAULT_TIMESTAMP_FORMAT)
 
 
-def save_png(path: str, image: np.ndarray) -> None:
+def get_unique_path(path: str) -> str:
+    p = Path(path)
+    if not p.exists():
+        return path
+    parent = p.parent
+    stem = p.stem
+    suffix = p.suffix
+    counter = 1
+    while True:
+        new_path = parent / f"{stem}_{counter}{suffix}"
+        if not new_path.exists():
+            return str(new_path)
+        counter += 1
+
+
+def save_png(path: str, image: np.ndarray, overwrite: bool = False) -> str:
     if image is None:
         raise ValueError(MSG_EXPORT_NO_IMAGE)
     if image.ndim != 3 or image.shape[2] != RGB_CHANNELS_EXPECTED:
         raise ValueError(MSG_EXPORT_IMAGE_NOT_RGB)
+    
+    p = Path(path)
+    p.parent.mkdir(parents=True, exist_ok=True)
+    
+    final_path = path if overwrite else get_unique_path(path)
+    
     img = np.clip(image, IMAGE_VALUE_MIN_INT, IMAGE_VALUE_MAX_INT).astype(np.uint8)
-    Image.fromarray(img).save(path, format=PNG_FORMAT)
+    Image.fromarray(img).save(final_path, format=PNG_FORMAT)
+    return final_path
 
 
 def export_paths(export_dir: str, timestamp: str | None = None) -> Tuple[str, str, str]:

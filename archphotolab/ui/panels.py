@@ -229,7 +229,7 @@ class ImagePanel(QWidget):
             return None
         img_x = (x - self._img_left) / self._display_scale
         img_y = (y - self._img_top) / self._display_scale
-        if img_x < 0 or img_y < 0 or img_x > self._image_width or img_y > self._image_height:
+        if img_x < 0 or img_y < 0 or img_x >= self._image_width or img_y >= self._image_height:
             return None
         return float(img_x), float(img_y)
 

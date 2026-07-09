@@ -46,6 +46,7 @@ from archphotolab.constants import (
     DIALOG_TITLE_SAVE_OK,
     DEFAULT_ALIGNMENT_MODE,
     ERROR_WARNING_THRESHOLD_PX,
+    ERROR_MESSAGE_PREFIX,
     FILE_SELECT_EXPORT_FOLDER_TITLE,
     FILE_SELECT_PHOTO_TITLE,
     FILE_SELECT_PLAN_TITLE,
@@ -118,6 +119,7 @@ from archphotolab.constants import (
     MSG_LOAD_PLAN_ERROR_FMT,
     MSG_OVERLAY_BASE_MISSING,
     MSG_OVERLAY_IMAGE_MISSING,
+    MSG_OVERLAY_IMAGE_SIZE_MISMATCH,
     MSG_OVERLAY_PLAN_MISSING,
     MSG_POINT_ADDED_FMT,
     MSG_POINT_MODE_OFF,
@@ -156,7 +158,6 @@ from archphotolab.constants import (
     MSG_EXPORT_SAVED_OVERLAY_FMT,
     MSG_EXPORT_SAVED_WARPED_FMT,
     MSG_EXPORT_SUCCESS_FMT,
-    MSG_FLATTEN_PRESET_APPLIED_FMT,
     PROJECT_FILE_FILTER,
     QOBJECT_INTRO_CARD,
     QOBJECT_STATUS_PANEL,
@@ -346,7 +347,8 @@ class MainWindow(QMainWindow):
         row2.addWidget(self.chk_compare_split)
         row2.addWidget(self.btn_delete_point)
         row2.addWidget(self.point_editor)
-        row2.addWidget(self.btn_export := QPushButton(VIEW_BUTTON_EXPORT))
+        self.btn_export = QPushButton(VIEW_BUTTON_EXPORT)
+        row2.addWidget(self.btn_export)
         row2.addStretch()
         self.btn_export.clicked.connect(self._export_pngs)
 
@@ -820,20 +822,6 @@ class MainWindow(QMainWindow):
         self._point_dragging_side = None
         self._refresh_ui()
 
-    def _on_point_moved_simple(self, side: str, index: int, x: float, y: float) -> None:
-        image = self.state.photo_image if side == VIEW_MODE_PHOTO else self.state.plan_image
-        if image is None:
-            return
-        self.controller.move_point(
-            side=side,
-            index=index,
-            x=x,
-            y=y,
-            image_width=image.shape[1],
-            image_height=image.shape[0],
-            record_history=False,
-        )
-
     def _on_point_selected(self, side: str, index: int) -> None:
         self.controller.select_point(side, index)
         self._refresh_point_overlays()
@@ -976,14 +964,14 @@ class MainWindow(QMainWindow):
                 flat_image = self._ensure_flattened(force=True)
             if flat_image is None:
                 raise ValueError(MSG_FLATTEN_REQUIRED)
-            save_png(flat_path, flat_image)
-            saved.append(MSG_EXPORT_SAVED_FLAT_FMT.format(filename=Path(flat_path).name))
+            saved_flat_path = save_png(flat_path, flat_image)
+            saved.append(MSG_EXPORT_SAVED_FLAT_FMT.format(filename=Path(saved_flat_path).name))
 
             if self.state.warped_plan is not None:
-                save_png(warped_path, self.state.warped_plan)
-                saved.append(MSG_EXPORT_SAVED_WARPED_FMT.format(filename=Path(warped_path).name))
-                save_png(overlay_path, self._compose_overlay())
-                saved.append(MSG_EXPORT_SAVED_OVERLAY_FMT.format(filename=Path(overlay_path).name))
+                saved_warped_path = save_png(warped_path, self.state.warped_plan)
+                saved.append(MSG_EXPORT_SAVED_WARPED_FMT.format(filename=Path(saved_warped_path).name))
+                saved_overlay_path = save_png(overlay_path, self._compose_overlay())
+                saved.append(MSG_EXPORT_SAVED_OVERLAY_FMT.format(filename=Path(saved_overlay_path).name))
             else:
                 missing.append(MSG_EXPORT_MISSING_OVERLAY)
                 missing.append(MSG_EXPORT_MISSING_PLAN)
@@ -1017,10 +1005,22 @@ class MainWindow(QMainWindow):
         payload = state_to_dict(self.state)
         payload[ProjectKeys.FORMAT_VERSION] = PROJECT_FORMAT
 
-        with open(file_path, "w", encoding=JSON_CHARSET_ENCODING) as f:
-            import json
+        import json
+        import os
 
-            json.dump(payload, f, ensure_ascii=False, indent=2)
+        path = Path(file_path)
+        temp_path = path.with_suffix(path.suffix + ".tmp")
+        try:
+            with open(temp_path, "w", encoding=JSON_CHARSET_ENCODING) as f:
+                json.dump(payload, f, ensure_ascii=False, indent=2)
+            os.replace(temp_path, path)
+        except Exception as exc:
+            if temp_path.exists():
+                try:
+                    temp_path.unlink()
+                except Exception:
+                    pass
+            raise exc
 
         self.state.last_project_file = file_path
         self._set_message(MSG_PROJECT_SAVED_FMT.format(path=file_path))

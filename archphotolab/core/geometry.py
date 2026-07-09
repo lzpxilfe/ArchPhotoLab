@@ -364,18 +364,6 @@ def warp_plan_to_photo(
             borderValue=(0, 0, 0),
         )
 
-    if mode == ALIGNMENT_MODE_AFFINE and transform_matrix.shape == TRANSFORM_MATRIX_SHAPE_HOMOGRAPHY:
-        # 안전장치: 잘못된 모양 데이터가 들어오는 케이스
-        affine = transform_matrix[:2, :]
-        return cv2.warpAffine(
-            plan_image,
-            affine,
-            (width, height),
-            flags=cv2.INTER_LINEAR,
-            borderMode=cv2.BORDER_CONSTANT,
-            borderValue=(0, 0, 0),
-        )
-
     raise ValueError(MSG_HOMOGRAPHY_BAD_RESULT)
 
 

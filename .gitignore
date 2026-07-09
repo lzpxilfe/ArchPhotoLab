@@ -26,3 +26,14 @@ env/
 
 # PySide generated
 *.qmlc
+
+# PyInstaller spec files
+*.spec
+
+# OS-specific files
+Thumbs.db
+Desktop.ini
+
+# Project exports / output directories
+output/
+exports/
