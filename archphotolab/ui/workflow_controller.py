@@ -263,6 +263,8 @@ class WorkflowController:
             self.state.homography,
             self.state.photo_image.shape,
             mode=self.state.alignment_mode,
+            photo_points=self.state.photo_points,
+            plan_points=self.state.plan_points,
         )
 
         return True, result, None

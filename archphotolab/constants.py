@@ -13,17 +13,30 @@ PROJECT_MIN_COMPATIBLE_VERSION: Final[str] = "0.1.0"
 ALIGNMENT_MODE_HOMOGRAPHY: Final[str] = "homography"
 ALIGNMENT_MODE_AFFINE: Final[str] = "affine"
 ALIGNMENT_MODE_SIMILARITY: Final[str] = "similarity"
+ALIGNMENT_MODE_TPS: Final[str] = "tps"
 TRANSFORM_MODE_OPTIONS: Final[tuple[str, ...]] = (
     ALIGNMENT_MODE_HOMOGRAPHY,
     ALIGNMENT_MODE_AFFINE,
     ALIGNMENT_MODE_SIMILARITY,
+    ALIGNMENT_MODE_TPS,
 )
 ALIGNMENT_MODE_LABELS: Final[dict[str, str]] = {
     ALIGNMENT_MODE_HOMOGRAPHY: "프로젝트 정합",
     ALIGNMENT_MODE_AFFINE: "선형 정합",
     ALIGNMENT_MODE_SIMILARITY: "유사 변환 정합",
+    ALIGNMENT_MODE_TPS: "TPS 자유 변형",
 }
 DEFAULT_ALIGNMENT_MODE: Final[str] = ALIGNMENT_MODE_HOMOGRAPHY
+
+# Blend modes
+BLEND_MODE_NORMAL: Final[str] = "normal"
+BLEND_MODE_MULTIPLY: Final[str] = "multiply"
+BLEND_MODE_DEFAULT: Final[str] = BLEND_MODE_NORMAL
+BLEND_MODE_LABELS: Final[dict[str, str]] = {
+    BLEND_MODE_NORMAL: "일반 (투명도)",
+    BLEND_MODE_MULTIPLY: "곱하기 (흰 배경 제거)",
+}
+LABEL_BLEND_MODE: Final[str] = "블렌드"
 
 # Layout
 DEFAULT_WINDOW_SIZE: Final[tuple[int, int]] = (1660, 1020)
@@ -53,6 +66,7 @@ JSON_CHARSET_ENCODING: Final[str] = "utf-8"
 
 # Alignment / geometry
 MIN_ALIGNMENT_POINTS: Final[int] = 4
+MIN_TPS_POINTS: Final[int] = 5
 HOMOGRAPHY_METHOD: Final[int] = 0
 GEOMETRY_DEFAULT_RANSAC_THRESHOLD: Final[float] = 0.0
 GEOMETRY_NUMERIC_EPSILON: Final[float] = 1e-6
@@ -84,10 +98,14 @@ POINT_HISTORY_LIMIT: Final[int] = 200
 ALIGNMENT_RANSAC_THRESHOLD_DEFAULT: Final[float] = 3.0
 TRANSFORM_MATRIX_SHAPE_HOMOGRAPHY: Final[tuple[int, int]] = (3, 3)
 TRANSFORM_MATRIX_SHAPE_AFFINE: Final[tuple[int, int]] = (2, 3)
+TRANSFORM_MATRIX_SHAPE_TPS: Final[tuple[int, int]] = (1, 1)  # sentinel for TPS mode
 TRANSFORM_MATRIX_SHAPES: Final[tuple[tuple[int, int], ...]] = (
     TRANSFORM_MATRIX_SHAPE_HOMOGRAPHY,
     TRANSFORM_MATRIX_SHAPE_AFFINE,
+    TRANSFORM_MATRIX_SHAPE_TPS,
 )
+MSG_TPS_REQUIRE_MIN_POINTS_FMT: Final[str] = "TPS 변형은 {min_points}개 이상의 대응점이 필요합니다."
+MSG_TPS_SCIPY_MISSING: Final[str] = "scipy가 설치되어 있지 않아 TPS를 사용할 수 없습니다. (pip install scipy)"
 
 # View mode keys
 VIEW_MODE_PHOTO: Final[str] = "photo"
@@ -512,3 +530,4 @@ class ProjectKeys:
     PLAN_VIEW_ZOOM: Final[str] = "plan_view_zoom"
     PLAN_VIEW_PAN_X: Final[str] = "plan_view_pan_x"
     PLAN_VIEW_PAN_Y: Final[str] = "plan_view_pan_y"
+    BLEND_MODE: Final[str] = "blend_mode"

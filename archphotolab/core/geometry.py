@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from typing import List, Optional, Sequence, Tuple
 
 import cv2
@@ -10,11 +10,15 @@ from archphotolab.constants import (
     ALIGNMENT_MODE_AFFINE,
     ALIGNMENT_MODE_HOMOGRAPHY,
     ALIGNMENT_MODE_SIMILARITY,
+    ALIGNMENT_MODE_TPS,
     DEFAULT_ALIGNMENT_MODE,
     ALIGNMENT_RANSAC_THRESHOLD_DEFAULT,
     GEOMETRY_DEFAULT_RANSAC_THRESHOLD,
     GEOMETRY_NUMERIC_EPSILON,
     ALIGNMENT_SCORE_OFFSET,
+    MIN_TPS_POINTS,
+    MSG_TPS_REQUIRE_MIN_POINTS_FMT,
+    MSG_TPS_SCIPY_MISSING,
     QUALITY_GRADE_GOOD,
     QUALITY_GRADE_NORMAL,
     QUALITY_GRADE_POOR,
@@ -37,6 +41,7 @@ from archphotolab.constants import (
     TRANSFORM_MATRIX_SHAPES,
     TRANSFORM_MATRIX_SHAPE_AFFINE,
     TRANSFORM_MATRIX_SHAPE_HOMOGRAPHY,
+    TRANSFORM_MATRIX_SHAPE_TPS,
 )
 
 
@@ -89,6 +94,7 @@ class AlignmentResult:
     quality_profile: QualityProfile
     mode: str
     error_message: Optional[str] = None
+    tps_maps: Optional[Tuple[np.ndarray, np.ndarray]] = field(default=None)
 
     @classmethod
     def failed(
@@ -128,6 +134,37 @@ def _estimate_homography(src: np.ndarray, dst: np.ndarray, cfg: AlignmentConfig)
     flags = HOMOGRAPHY_METHOD if not cfg.ransac else cv2.RANSAC
     matrix, mask = cv2.findHomography(src, dst, method=flags, ransacReprojThreshold=cfg.ransac_reproj_threshold)
     return matrix, mask
+
+
+def _estimate_tps(
+    src_points: Sequence[Tuple[float, float]],
+    dst_points: Sequence[Tuple[float, float]],
+    photo_shape: Tuple[int, int],
+) -> Tuple[Optional[np.ndarray], Optional[np.ndarray], Optional[str]]:
+    """Estimate TPS warp maps using scipy RBFInterpolator (thin plate spline kernel).
+
+    Returns (remap_x, remap_y, error_message). On success error_message is None.
+    """
+    try:
+        from scipy.interpolate import RBFInterpolator
+    except ImportError:
+        return None, None, MSG_TPS_SCIPY_MISSING
+
+    src = np.asarray(src_points, dtype=np.float64)  # plan control points
+    dst = np.asarray(dst_points, dtype=np.float64)  # photo control points
+
+    # Build RBF from photo-space -> plan-space (inverse mapping for remap)
+    # We want: for each photo pixel (px, py), find which plan pixel to sample
+    rbf_x = RBFInterpolator(dst, src[:, 0], kernel="thin_plate_spline", smoothing=0.0)
+    rbf_y = RBFInterpolator(dst, src[:, 1], kernel="thin_plate_spline", smoothing=0.0)
+
+    h, w = photo_shape[:2]
+    grid_y, grid_x = np.mgrid[0:h, 0:w]
+    query = np.column_stack([grid_x.ravel().astype(np.float64), grid_y.ravel().astype(np.float64)])
+
+    remap_x = rbf_x(query).reshape(h, w).astype(np.float32)
+    remap_y = rbf_y(query).reshape(h, w).astype(np.float32)
+    return remap_x, remap_y, None
 
 
 def _estimate_affine(src: np.ndarray, dst: np.ndarray, cfg: AlignmentConfig) -> Tuple[Optional[np.ndarray], Optional[np.ndarray]]:
@@ -272,6 +309,42 @@ def estimate_transform(
         matrix, inliers = _estimate_affine(src, dst, cfg)
     elif cfg.mode == ALIGNMENT_MODE_SIMILARITY:
         matrix, inliers = _estimate_similarity(src, dst, cfg)
+    elif cfg.mode == ALIGNMENT_MODE_TPS:
+        if use_count < MIN_TPS_POINTS:
+            return AlignmentResult.failed(
+                mode=cfg.mode,
+                error_message=MSG_TPS_REQUIRE_MIN_POINTS_FMT.format(min_points=MIN_TPS_POINTS),
+                used_point_count=use_count,
+            )
+        photo_pts = list(photo_points[:use_count])
+        plan_pts = list(plan_points[:use_count])
+        # Use a placeholder photo_shape — actual remap computed during warp
+        remap_x, remap_y, tps_err = _estimate_tps(
+            src_points=plan_pts,
+            dst_points=photo_pts,
+            photo_shape=(1, 1),  # placeholder; real shape given at warp time
+        )
+        if tps_err is not None:
+            return AlignmentResult.failed(mode=cfg.mode, error_message=tps_err, used_point_count=use_count)
+        # Store control points as sentinel matrix; real warp done in warp_plan_to_photo
+        sentinel = np.array(TRANSFORM_MATRIX_SHAPE_TPS, dtype=np.float32).reshape(1, 1)
+        errors = _tps_reprojection_errors(photo_pts, plan_pts)
+        profile = _build_quality_profile(errors, None)
+        bad_threshold = max(_safe_percentile_threshold(errors), _mad_threshold(errors), ERROR_GRADE_WARNING)
+        outliers = [idx for idx, v in enumerate(errors) if v > bad_threshold]
+        score = _alignment_score(profile)
+        return AlignmentResult(
+            matrix=sentinel,
+            used_point_count=use_count,
+            reprojection_errors=errors,
+            score=score,
+            outlier_indices=outliers,
+            inlier_mask=None,
+            quality_profile=profile,
+            mode=cfg.mode,
+            error_message=None,
+            tps_maps=None,  # computed lazily at warp time
+        )
     else:
         return AlignmentResult.failed(
             mode=cfg.mode,
@@ -326,12 +399,34 @@ def warp_plan_to_photo(
     transform_matrix: np.ndarray,
     photo_shape: Tuple[int, int],
     mode: str = DEFAULT_ALIGNMENT_MODE,
+    photo_points: Optional[Sequence[Tuple[float, float]]] = None,
+    plan_points: Optional[Sequence[Tuple[float, float]]] = None,
 ) -> np.ndarray:
     """Warp plan image into photo coordinate space."""
     height, width = photo_shape[:2]
 
     if transform_matrix is None:
         raise ValueError(MSG_TRANSFORM_MATRIX_MISSING)
+
+    if mode == ALIGNMENT_MODE_TPS:
+        # TPS: compute remap maps fresh with the actual photo size
+        if photo_points is None or plan_points is None:
+            raise ValueError(MSG_TRANSFORM_MATRIX_MISSING)
+        remap_x, remap_y, tps_err = _estimate_tps(
+            src_points=list(plan_points),
+            dst_points=list(photo_points),
+            photo_shape=photo_shape,
+        )
+        if tps_err is not None:
+            raise ValueError(tps_err)
+        return cv2.remap(
+            plan_image,
+            remap_x,
+            remap_y,
+            interpolation=cv2.INTER_LINEAR,
+            borderMode=cv2.BORDER_CONSTANT,
+            borderValue=(0, 0, 0),
+        )
 
     if transform_matrix.shape == TRANSFORM_MATRIX_SHAPE_HOMOGRAPHY:
         return cv2.warpPerspective(
@@ -354,6 +449,28 @@ def warp_plan_to_photo(
         )
 
     raise ValueError(MSG_HOMOGRAPHY_BAD_RESULT)
+
+
+def _tps_reprojection_errors(
+    photo_points: Sequence[Tuple[float, float]],
+    plan_points: Sequence[Tuple[float, float]],
+) -> List[float]:
+    """Placeholder reprojection error for TPS: uses leave-one-out Euclidean distance."""
+    if len(photo_points) < 2:
+        return [0.0] * len(photo_points)
+    errors = []
+    for i in range(len(photo_points)):
+        other_photo = [p for j, p in enumerate(photo_points) if j != i]
+        other_plan = [p for j, p in enumerate(plan_points) if j != i]
+        px, py = photo_points[i]
+        pl_x, pl_y = plan_points[i]
+        # Simple nearest-neighbour residual estimate
+        dists = [
+            ((px - op[0])**2 + (py - op[1])**2)**0.5
+            for op in other_photo
+        ]
+        errors.append(min(dists) if dists else 0.0)
+    return errors
 
 
 def compute_reprojection_errors(

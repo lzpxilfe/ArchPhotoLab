@@ -27,7 +27,13 @@ from archphotolab.constants import (
     ALIGNMENT_MODE_HOMOGRAPHY,
     ALIGNMENT_MODE_LABELS,
     ALIGNMENT_MODE_SIMILARITY,
+    ALIGNMENT_MODE_TPS,
     ALPHA_PERCENT_SCALE,
+    BLEND_MODE_DEFAULT,
+    BLEND_MODE_LABELS,
+    BLEND_MODE_MULTIPLY,
+    BLEND_MODE_NORMAL,
+    LABEL_BLEND_MODE,
     BUTTON_BORDER_RADIUS,
     BUTTON_FONT_WEIGHT,
     BUTTON_PADDING_X,
@@ -242,6 +248,7 @@ from archphotolab.core.export import (
 )
 from archphotolab.core.geometry import warp_plan_to_photo
 from archphotolab.core.imagery import (
+    blend_multiply,
     blend_overlay,
     flatten_illumination,
     load_rgb_image,
@@ -382,8 +389,20 @@ class MainWindow(QMainWindow):
         self.cmb_alignment_mode.addItem(ALIGNMENT_MODE_LABELS[ALIGNMENT_MODE_HOMOGRAPHY], ALIGNMENT_MODE_HOMOGRAPHY)
         self.cmb_alignment_mode.addItem(ALIGNMENT_MODE_LABELS[ALIGNMENT_MODE_AFFINE], ALIGNMENT_MODE_AFFINE)
         self.cmb_alignment_mode.addItem(ALIGNMENT_MODE_LABELS[ALIGNMENT_MODE_SIMILARITY], ALIGNMENT_MODE_SIMILARITY)
+        self.cmb_alignment_mode.addItem(ALIGNMENT_MODE_LABELS[ALIGNMENT_MODE_TPS], ALIGNMENT_MODE_TPS)
         self.cmb_alignment_mode.currentIndexChanged.connect(self._on_alignment_mode_changed)
         row3.addWidget(self.cmb_alignment_mode)
+
+        row3.addWidget(QLabel(LABEL_BLEND_MODE))
+        self.cmb_blend_mode = QComboBox()
+        for mode_key, mode_label in BLEND_MODE_LABELS.items():
+            self.cmb_blend_mode.addItem(mode_label, mode_key)
+        current_blend_idx = self.cmb_blend_mode.findData(self.state.blend_mode)
+        if current_blend_idx >= 0:
+            self.cmb_blend_mode.setCurrentIndex(current_blend_idx)
+        self.cmb_blend_mode.currentIndexChanged.connect(self._on_blend_mode_changed)
+        self.cmb_blend_mode.setMinimumWidth(COMBO_MIN_WIDTH)
+        row3.addWidget(self.cmb_blend_mode)
         row3.addStretch()
 
         row4 = QHBoxLayout()
@@ -778,6 +797,10 @@ class MainWindow(QMainWindow):
         self.lbl_alpha.setText(f"{value}%")
         self._refresh_result_view()
 
+    def _on_blend_mode_changed(self) -> None:
+        self.state.blend_mode = str(self.cmb_blend_mode.currentData())
+        self._refresh_result_view()
+
     def _toggle_flat_compare(self, checked: bool) -> None:
         if checked:
             if self.state.photo_image is None:
@@ -981,6 +1004,8 @@ class MainWindow(QMainWindow):
             raise ValueError(MSG_OVERLAY_PLAN_MISSING)
         if base.shape[:2] != self.state.warped_plan.shape[:2]:
             raise ValueError(MSG_OVERLAY_IMAGE_SIZE_MISMATCH)
+        if self.state.blend_mode == BLEND_MODE_MULTIPLY:
+            return blend_multiply(base, self.state.warped_plan, self.state.overlay_alpha)
         return blend_overlay(base, self.state.warped_plan, self.state.overlay_alpha)
 
     def _run_alignment(self) -> None:
@@ -1188,6 +1213,9 @@ class MainWindow(QMainWindow):
             self.cmb_view.setCurrentText(self._view_mode_label(self.state.result_view_mode))
             self._set_combo_by_value(self.state.alignment_mode, is_alignment=True)
             self.cmb_flatten_preset.setCurrentText(self.state.flatten_preset)
+            blend_idx = self.cmb_blend_mode.findData(self.state.blend_mode)
+            if blend_idx >= 0:
+                self.cmb_blend_mode.setCurrentIndex(blend_idx)
 
             message = MSG_PROJECT_LOADED_FMT.format(name=Path(file_path).name)
             if migration_warnings:

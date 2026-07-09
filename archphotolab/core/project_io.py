@@ -9,6 +9,7 @@ import numpy as np
 
 from archphotolab.constants import (
     APP_VERSION,
+    BLEND_MODE_DEFAULT,
     DEFAULT_ALIGNMENT_MODE,
     OVERLAY_ALPHA_DEFAULT,
     POINT_PANEL_ZOOM_DEFAULT,
@@ -265,6 +266,7 @@ def state_to_dict(state: AppState) -> Dict[str, Any]:
             "outlier_indices": state.quality_profile.outlier_indices,
         },
         ProjectKeys.QUALITY_GRADE: state.quality_profile.grade,
+        ProjectKeys.BLEND_MODE: state.blend_mode,
     }
 
 
@@ -287,6 +289,7 @@ def apply_project_dict_to_state(data: Dict[str, Any]) -> AppState:
     state.split_ratio = _coerce_float(payload.get(ProjectKeys.SPLIT_VIEW_RATIO), state.split_ratio)
     state.result_view_mode = payload.get(ProjectKeys.RESULT_VIEW_MODE, state.result_view_mode)
     state.overlay_alpha = _coerce_float(payload.get(ProjectKeys.OVERLAY_ALPHA), state.overlay_alpha)
+    state.blend_mode = payload.get(ProjectKeys.BLEND_MODE, BLEND_MODE_DEFAULT)
     state.homography = parse_homography(payload.get(ProjectKeys.HOMOGRAPHY))
     state.reprojection_avg = payload.get(ProjectKeys.REPROJECTION_AVG)
     state.reprojection_median = payload.get(ProjectKeys.REPROJECTION_MEDIAN)

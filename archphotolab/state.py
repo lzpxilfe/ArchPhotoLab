@@ -6,6 +6,7 @@ from typing import List, Optional, Tuple
 import numpy as np
 
 from archphotolab.constants import (
+    BLEND_MODE_DEFAULT,
     DEFAULT_ALIGNMENT_MODE,
     POINT_HISTORY_LIMIT,
     POINT_PANEL_ZOOM_DEFAULT,
@@ -73,6 +74,7 @@ class AppState:
     alignment_score: float = 0.0
 
     overlay_alpha: float = OVERLAY_ALPHA_DEFAULT
+    blend_mode: str = BLEND_MODE_DEFAULT
     reprojection_errors: List[float] = field(default_factory=list)
     reprojection_avg: Optional[float] = None
     reprojection_max: Optional[float] = None

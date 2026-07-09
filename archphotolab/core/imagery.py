@@ -64,7 +64,7 @@ def load_rgb_image(path: str) -> np.ndarray:
 
 
 def blend_overlay(photo_image: np.ndarray, warped_plan_image: np.ndarray, alpha: float) -> np.ndarray:
-    """Blend two RGB images in photo coordinate space."""
+    """Blend two RGB images in photo coordinate space (normal/opacity mode)."""
     if photo_image is None or warped_plan_image is None:
         raise ValueError(MSG_OVERLAY_IMAGE_MISSING)
     if warped_plan_image.shape[:2] != photo_image.shape[:2]:
@@ -75,6 +75,30 @@ def blend_overlay(photo_image: np.ndarray, warped_plan_image: np.ndarray, alpha:
     plan = warped_plan_image.astype(np.float32)
 
     result = photo * (1.0 - clamped_alpha) + plan * clamped_alpha
+    return np.clip(result, IMAGE_VALUE_LOWER_CLIP, IMAGE_VALUE_UPPER_CLIP).astype(np.uint8)
+
+
+def blend_multiply(photo_image: np.ndarray, warped_plan_image: np.ndarray, alpha: float) -> np.ndarray:
+    """Multiply blend: plan white background disappears, dark lines stay.
+
+    Formula: result = photo * (plan / 255)
+    The alpha parameter controls blend strength:
+      alpha=1.0 -> full multiply
+      alpha=0.0 -> photo only
+    """
+    if photo_image is None or warped_plan_image is None:
+        raise ValueError(MSG_OVERLAY_IMAGE_MISSING)
+    if warped_plan_image.shape[:2] != photo_image.shape[:2]:
+        raise ValueError(MSG_OVERLAY_IMAGE_SIZE_MISMATCH)
+
+    clamped_alpha = float(np.clip(alpha, 0.0, 1.0))
+    photo = photo_image.astype(np.float32)
+    plan = warped_plan_image.astype(np.float32)
+
+    # Pure multiply result
+    multiplied = photo * (plan / 255.0)
+    # Blend between photo (no effect) and multiplied result
+    result = photo * (1.0 - clamped_alpha) + multiplied * clamped_alpha
     return np.clip(result, IMAGE_VALUE_LOWER_CLIP, IMAGE_VALUE_UPPER_CLIP).astype(np.uint8)
 
 
