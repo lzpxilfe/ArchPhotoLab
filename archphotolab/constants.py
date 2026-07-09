@@ -439,8 +439,8 @@ PANEL_IMAGE_STYLE_COLOR_TRANSPARENT: Final[str] = "transparent"
 
 # Splash
 SPLASH_WIDTH: Final[int] = 520
-SPLASH_HEIGHT: Final[int] = 260
-SPLASH_BG_COLOR: Final[tuple[int, int, int]] = (24, 28, 38)
+SPLASH_HEIGHT: Final[int] = 360
+SPLASH_BG_COLOR: Final[tuple[int, int, int]] = (11, 15, 25)
 SPLASH_TEXT_COLOR: Final[tuple[int, int, int]] = (228, 236, 255)
 SPLASH_TITLE_FONT_SIZE: Final[int] = 15
 SPLASH_BODY_FONT_SIZE: Final[int] = 10

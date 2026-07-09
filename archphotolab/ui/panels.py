@@ -77,6 +77,7 @@ class ImagePanel(QWidget):
         self._title = title
         self._editable = editable
         self._pixmap: Optional[QPixmap] = None
+        self._draw_pixmap: Optional[QPixmap] = None
         self._image_width = 1
         self._image_height = 1
 
@@ -114,6 +115,7 @@ class ImagePanel(QWidget):
     def set_image(self, image: Optional[np.ndarray]) -> None:
         if image is None:
             self._pixmap = None
+            self._draw_pixmap = None
             self._image_width = 1
             self._image_height = 1
             self._img_width = 1
@@ -197,6 +199,7 @@ class ImagePanel(QWidget):
             self._img_top = 0
             self._img_width = max(1, self._image_width)
             self._img_height = max(1, self._image_height)
+            self._draw_pixmap = None
             return
 
         pix = self._scaled_pixmap()
@@ -207,13 +210,18 @@ class ImagePanel(QWidget):
 
         self._base_scale = pix.width() / max(self._image_width, 1)
         self._display_scale = max(self._base_scale * self._zoom, POINT_PANEL_ZOOM_EPSILON)
-        base_left = (target_w - pix.width()) // 2
-        base_top = PANEL_TOP_BANNER_HEIGHT + (target_h - pix.height()) // 2
+
+        new_w = max(1, int(self._image_width * self._display_scale))
+        new_h = max(1, int(self._image_height * self._display_scale))
+        self._draw_pixmap = self._pixmap.scaled(new_w, new_h, Qt.IgnoreAspectRatio, Qt.SmoothTransformation)
+
+        base_left = (target_w - new_w) // 2
+        base_top = PANEL_TOP_BANNER_HEIGHT + (target_h - new_h) // 2
 
         self._img_left = int(base_left + self._pan_offset_x)
         self._img_top = int(base_top + self._pan_offset_y)
-        self._img_width = max(1, pix.width())
-        self._img_height = max(1, pix.height())
+        self._img_width = new_w
+        self._img_height = new_h
         self.viewStateChanged.emit(self._zoom, self._pan_offset_x, self._pan_offset_y)
 
     def _to_widget_from_image(self, point: tuple[float, float]) -> Optional[tuple[int, int]]:
@@ -407,11 +415,10 @@ class ImagePanel(QWidget):
             painter.drawText(IMAGE_PANEL_HINT_X, self.height() // 2, IMAGE_PANEL_HINT_TEXT)
             return
 
-        pix = self._scaled_pixmap()
-        if pix is None:
+        if self._draw_pixmap is None:
             return
 
-        painter.drawPixmap(self._img_left, self._img_top, pix)
+        painter.drawPixmap(self._img_left, self._img_top, self._draw_pixmap)
 
         warnings = set(self._warning_indices)
         max_error = max(self._point_errors) if self._point_errors else 0.0
