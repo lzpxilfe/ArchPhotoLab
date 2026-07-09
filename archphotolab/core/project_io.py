@@ -269,7 +269,10 @@ def state_to_dict(state: AppState) -> Dict[str, Any]:
 
 
 def apply_project_dict_to_state(data: Dict[str, Any]) -> AppState:
-    payload, _migration_messages = migrate_project_payload(data)
+    payload, migration_messages = migrate_project_payload(data)
+    if migration_messages:
+        import logging
+        logging.getLogger(__name__).warning("Project migration warnings: %s", ", ".join(migration_messages))
     state = AppState()
 
     state.photo_path = payload.get(ProjectKeys.PHOTO_PATH)

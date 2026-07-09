@@ -199,6 +199,8 @@ RESULT_LAST_SAVED_NONE: Final[str] = "마지막 저장: 없음"
 DIALOG_TITLE_ERROR: Final[str] = "오류"
 DIALOG_TITLE_INFO: Final[str] = "저장"
 DIALOG_TITLE_SAVE_OK: Final[str] = "저장 완료"
+DIALOG_TITLE_CONFIRM: Final[str] = "확인"
+MSG_CONFIRM_LOAD_DESTRUCTIVE: Final[str] = "이미 등록된 대응점이 존재합니다. 새로운 파일을 불러오면 기존의 모든 대응점과 정합 결과가 초기화됩니다. 계속하시겠습니까?"
 
 MSG_POINT_MODE_ON: Final[str] = "점 편집 모드: 사용"
 MSG_POINT_MODE_OFF: Final[str] = "점 편집 모드: 잠금"

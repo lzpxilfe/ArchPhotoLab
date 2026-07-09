@@ -90,6 +90,26 @@ class AlignmentResult:
     mode: str
     error_message: Optional[str] = None
 
+    @classmethod
+    def failed(
+        cls,
+        mode: str,
+        error_message: str,
+        used_point_count: int = 0,
+        inlier_mask: Optional[np.ndarray] = None,
+    ) -> AlignmentResult:
+        return cls(
+            matrix=None,
+            used_point_count=used_point_count,
+            reprojection_errors=[],
+            score=0.0,
+            outlier_indices=[],
+            inlier_mask=inlier_mask,
+            quality_profile=_empty_quality_profile(),
+            mode=mode,
+            error_message=error_message,
+        )
+
 
 def _validate_point_pairs(
     photo_points: Sequence[Tuple[float, float]],
@@ -234,27 +254,14 @@ def estimate_transform(
     use_count, src, dst = _validate_point_pairs(photo_points, plan_points)
 
     if use_count < MIN_ALIGNMENT_POINTS:
-        return AlignmentResult(
-            matrix=None,
-            used_point_count=use_count,
-            reprojection_errors=[],
-            score=0.0,
-            outlier_indices=[],
-            inlier_mask=None,
-            quality_profile=_empty_quality_profile(),
+        return AlignmentResult.failed(
             mode=cfg.mode,
             error_message=MSG_HOMOGRAPHY_REQUIRE_MIN_POINTS_FMT.format(min_points=MIN_ALIGNMENT_POINTS),
+            used_point_count=use_count,
         )
 
     if src.ndim != 3 or src.shape[0] < MIN_ALIGNMENT_POINTS or src.shape[2] != 2:
-        return AlignmentResult(
-            matrix=None,
-            used_point_count=0,
-            reprojection_errors=[],
-            score=0.0,
-            outlier_indices=[],
-            inlier_mask=None,
-            quality_profile=_empty_quality_profile(),
+        return AlignmentResult.failed(
             mode=cfg.mode,
             error_message=MSG_HOMOGRAPHY_BAD_POINT_SHAPE,
         )
@@ -266,42 +273,24 @@ def estimate_transform(
     elif cfg.mode == ALIGNMENT_MODE_SIMILARITY:
         matrix, inliers = _estimate_similarity(src, dst, cfg)
     else:
-        return AlignmentResult(
-            matrix=None,
-            used_point_count=0,
-            reprojection_errors=[],
-            score=0.0,
-            outlier_indices=[],
-            inlier_mask=None,
-            quality_profile=_empty_quality_profile(),
+        return AlignmentResult.failed(
             mode=cfg.mode,
             error_message=MSG_ALIGNMENT_MODE_UNSUPPORTED,
         )
 
     if matrix is None:
-        return AlignmentResult(
-            matrix=None,
-            used_point_count=use_count,
-            reprojection_errors=[],
-            score=0.0,
-            outlier_indices=[],
-            inlier_mask=None,
-            quality_profile=_empty_quality_profile(),
+        return AlignmentResult.failed(
             mode=cfg.mode,
             error_message=MSG_HOMOGRAPHY_DEGENERATE,
+            used_point_count=use_count,
         )
 
     if matrix.shape not in TRANSFORM_MATRIX_SHAPES:
-        return AlignmentResult(
-            matrix=None,
-            used_point_count=use_count,
-            reprojection_errors=[],
-            score=0.0,
-            outlier_indices=[],
-            inlier_mask=inliers,
-            quality_profile=_empty_quality_profile(),
+        return AlignmentResult.failed(
             mode=cfg.mode,
             error_message=MSG_HOMOGRAPHY_BAD_RESULT,
+            used_point_count=use_count,
+            inlier_mask=inliers,
         )
 
     errors = compute_reprojection_errors(

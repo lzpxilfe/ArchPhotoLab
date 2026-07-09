@@ -44,6 +44,8 @@ from archphotolab.constants import (
     DIALOG_TITLE_ERROR,
     DIALOG_TITLE_INFO,
     DIALOG_TITLE_SAVE_OK,
+    DIALOG_TITLE_CONFIRM,
+    MSG_CONFIRM_LOAD_DESTRUCTIVE,
     DEFAULT_ALIGNMENT_MODE,
     ERROR_WARNING_THRESHOLD_PX,
     ERROR_MESSAGE_PREFIX,
@@ -1373,6 +1375,17 @@ class MainWindow(QMainWindow):
         self._refresh_status()
 
     def _load_photo(self) -> None:
+        if self.state.photo_points or self.state.plan_points:
+            reply = QMessageBox.question(
+                self,
+                DIALOG_TITLE_CONFIRM,
+                MSG_CONFIRM_LOAD_DESTRUCTIVE,
+                QMessageBox.Yes | QMessageBox.No,
+                QMessageBox.No,
+            )
+            if reply == QMessageBox.No:
+                return
+
         file_path, _ = QFileDialog.getOpenFileName(
             self,
             FILE_SELECT_PHOTO_TITLE,
@@ -1402,6 +1415,17 @@ class MainWindow(QMainWindow):
             self._set_message(f"{MSG_LOAD_PHOTO_ERROR_FMT.format(error=exc)}", is_error=True)
 
     def _load_plan(self) -> None:
+        if self.state.photo_points or self.state.plan_points:
+            reply = QMessageBox.question(
+                self,
+                DIALOG_TITLE_CONFIRM,
+                MSG_CONFIRM_LOAD_DESTRUCTIVE,
+                QMessageBox.Yes | QMessageBox.No,
+                QMessageBox.No,
+            )
+            if reply == QMessageBox.No:
+                return
+
         file_path, _ = QFileDialog.getOpenFileName(
             self,
             FILE_SELECT_PLAN_TITLE,

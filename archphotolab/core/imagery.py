@@ -133,8 +133,20 @@ def flatten_illumination(
     l_channel, a_channel, b_channel = cv2.split(lab)
 
     l_float = l_channel.astype(np.float32)
-    kernel = _background_kernel((rgb.shape[0], rgb.shape[1]), params["kernel_scale"])
-    illum = cv2.GaussianBlur(l_float, (kernel, kernel), 0)
+    h, w = l_float.shape
+    min_dim = min(h, w)
+    target_min = 800
+    if min_dim > target_min:
+        scale_factor = target_min / min_dim
+        new_w = int(w * scale_factor)
+        new_h = int(h * scale_factor)
+        l_down = cv2.resize(l_float, (new_w, new_h), interpolation=cv2.INTER_AREA)
+        kernel = _background_kernel((new_h, new_w), params["kernel_scale"])
+        illum_down = cv2.GaussianBlur(l_down, (kernel, kernel), 0)
+        illum = cv2.resize(illum_down, (w, h), interpolation=cv2.INTER_LINEAR)
+    else:
+        kernel = _background_kernel((h, w), params["kernel_scale"])
+        illum = cv2.GaussianBlur(l_float, (kernel, kernel), 0)
 
     mean_l = max(float(l_float.mean()), 1.0)
     reduced = l_float / (illum + BACKGROUND_EPSILON) * mean_l

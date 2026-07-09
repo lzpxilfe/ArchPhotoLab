@@ -410,15 +410,6 @@ class ImagePanel(QWidget):
         pix = self._scaled_pixmap()
         if pix is None:
             return
-        target_w = self.width()
-        target_h = max(1, self.height() - PANEL_RENDER_PADDING_BOTTOM)
-        centered_left = (target_w - pix.width()) // 2
-        centered_top = PANEL_TOP_BANNER_HEIGHT + (target_h - pix.height()) // 2
-        self._img_left = int(centered_left + self._pan_offset_x)
-        self._img_top = int(centered_top + self._pan_offset_y)
-
-        self._base_scale = pix.width() / max(self._image_width, 1)
-        self._display_scale = self._base_scale * self._zoom
 
         painter.drawPixmap(self._img_left, self._img_top, pix)
 
