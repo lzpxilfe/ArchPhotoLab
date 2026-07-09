@@ -21,7 +21,7 @@ from archphotolab.constants import (
 )
 from archphotolab.constants import MSG_ALIGNMENT_MODE_UNSUPPORTED
 from archphotolab.constants import VIEW_MODE_PHOTO, VIEW_MODE_PLAN
-from archphotolab.core.geometry import AlignmentConfig, AlignmentResult, AlignmentProfile, estimate_transform, warp_plan_to_photo
+from archphotolab.core.geometry import AlignmentConfig, AlignmentResult, QualityProfile, estimate_transform, warp_plan_to_photo
 from archphotolab.state import AlignmentProfile as StateAlignmentProfile, AppState
 
 
@@ -185,7 +185,7 @@ class WorkflowController:
                 score=0.0,
                 outlier_indices=[],
                 inlier_mask=None,
-                quality_profile=AlignmentProfile(
+                quality_profile=QualityProfile(
                     average_error=None,
                     median_error=None,
                     max_error=None,
@@ -210,7 +210,7 @@ class WorkflowController:
                     score=0.0,
                     outlier_indices=[],
                     inlier_mask=None,
-                    quality_profile=AlignmentProfile(
+                    quality_profile=QualityProfile(
                         average_error=None,
                         median_error=None,
                         max_error=None,
@@ -300,7 +300,7 @@ class WorkflowController:
                 score=0.0,
                 outlier_indices=[],
                 inlier_mask=None,
-                quality_profile=AlignmentProfile(
+                quality_profile=QualityProfile(
                     average_error=None,
                     median_error=None,
                     max_error=None,
