@@ -215,3 +215,13 @@ ArchPhotoLab/
 ## License
 
 This repository is licensed under `GNU General Public License v2.0`. See [LICENSE](LICENSE).
+
+## Citation
+
+이 저장소가 연구, 수업, 현장 업무에 도움이 되었다면 GitHub의 **Cite this repository** 버튼으로 인용해 주세요.
+
+[![Cite this repository](https://img.shields.io/badge/Cite_this-repository-2ea44f?logo=github)](https://github.com/lzpxilfe/ArchPhotoLab)
+[![Star this repository](https://img.shields.io/github/stars/lzpxilfe/ArchPhotoLab?style=social)](https://github.com/lzpxilfe/ArchPhotoLab)
+
+인용 메타데이터는 [CITATION.cff](CITATION.cff)에 보관합니다.
+
