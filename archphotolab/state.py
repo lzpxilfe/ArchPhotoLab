@@ -70,6 +70,7 @@ class AppState:
 
     homography: Optional[np.ndarray] = None  # 3x3
     warped_plan: Optional[np.ndarray] = None  # RGB uint8 in photo coordinates
+    warp_mask: Optional[np.ndarray] = None    # uint8 grayscale: 255=valid plan area, 0=border padding
     alignment_mode: str = DEFAULT_ALIGNMENT_MODE
     alignment_score: float = 0.0
 

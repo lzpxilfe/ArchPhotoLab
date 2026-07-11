@@ -3,8 +3,8 @@ from __future__ import annotations
 from typing import Optional, Sequence
 
 import numpy as np
-from PySide6.QtCore import Qt, Signal
-from PySide6.QtGui import QColor, QFont, QImage, QPainter, QPen, QPixmap
+from PySide6.QtCore import Qt, QRect, Signal
+from PySide6.QtGui import QColor, QFont, QFontMetrics, QImage, QPainter, QPen, QPixmap
 from PySide6.QtWidgets import QWidget
 
 from archphotolab.constants import (
@@ -445,6 +445,17 @@ class ImagePanel(QWidget):
                 POINT_MARK_SIZE * 2,
                 POINT_MARK_SIZE * 2,
             )
+
+            # Draw centered label number inside the circle
+            label = str(idx + 1)
+            label_font = QFont(UI_FONT_FAMILY)
+            label_font.setPointSize(POINT_LABEL_FONT_SIZE)
+            label_font.setBold(True)
+            painter.setFont(label_font)
+            fm = QFontMetrics(label_font)
+            text_w = fm.horizontalAdvance(label)
+            text_h = fm.ascent()  # ascent aligns text baseline to visual center
+            text_x = px - text_w // 2
+            text_y = py + text_h // 2 - 1
             painter.setPen(QColor(*POINT_LABEL_TEXT_RGB))
-            painter.setFont(QFont(UI_FONT_FAMILY, POINT_LABEL_FONT_SIZE))
-            painter.drawText(px + POINT_LABEL_OFFSET_X, py + POINT_LABEL_OFFSET_Y, str(idx + 1))
+            painter.drawText(text_x, text_y, label)

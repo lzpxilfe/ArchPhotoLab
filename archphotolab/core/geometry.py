@@ -451,6 +451,71 @@ def warp_plan_to_photo(
     raise ValueError(MSG_HOMOGRAPHY_BAD_RESULT)
 
 
+def warp_validity_mask(
+    plan_shape: Tuple[int, int],
+    transform_matrix: np.ndarray,
+    photo_shape: Tuple[int, int],
+    mode: str = DEFAULT_ALIGNMENT_MODE,
+    photo_points: Optional[Sequence[Tuple[float, float]]] = None,
+    plan_points: Optional[Sequence[Tuple[float, float]]] = None,
+) -> np.ndarray:
+    """Return a grayscale mask (uint8) in photo coordinate space.
+
+    Pixels that are inside the warped plan boundary = 255.
+    Pixels that are outside (border fill) = 0.
+    Used by multiply blend to avoid darkening areas outside the plan.
+    """
+    # Create a solid white single-channel mask the same size as the plan
+    h_p, w_p = plan_shape[:2]
+    mask_src = np.full((h_p, w_p), 255, dtype=np.uint8)
+
+    height, width = photo_shape[:2]
+
+    if mode == ALIGNMENT_MODE_TPS:
+        if photo_points is None or plan_points is None:
+            return np.full((height, width), 255, dtype=np.uint8)
+        remap_x, remap_y, tps_err = _estimate_tps(
+            src_points=list(plan_points),
+            dst_points=list(photo_points),
+            photo_shape=photo_shape,
+        )
+        if tps_err is not None:
+            return np.full((height, width), 255, dtype=np.uint8)
+        return cv2.remap(
+            mask_src,
+            remap_x,
+            remap_y,
+            interpolation=cv2.INTER_NEAREST,
+            borderMode=cv2.BORDER_CONSTANT,
+            borderValue=0,
+        )
+
+    if transform_matrix is None:
+        return np.full((height, width), 255, dtype=np.uint8)
+
+    if transform_matrix.shape == TRANSFORM_MATRIX_SHAPE_HOMOGRAPHY:
+        return cv2.warpPerspective(
+            mask_src,
+            transform_matrix,
+            (width, height),
+            flags=cv2.INTER_NEAREST,
+            borderMode=cv2.BORDER_CONSTANT,
+            borderValue=0,
+        )
+
+    if transform_matrix.shape == TRANSFORM_MATRIX_SHAPE_AFFINE:
+        return cv2.warpAffine(
+            mask_src,
+            transform_matrix,
+            (width, height),
+            flags=cv2.INTER_NEAREST,
+            borderMode=cv2.BORDER_CONSTANT,
+            borderValue=0,
+        )
+
+    return np.full((height, width), 255, dtype=np.uint8)
+
+
 def _tps_reprojection_errors(
     photo_points: Sequence[Tuple[float, float]],
     plan_points: Sequence[Tuple[float, float]],

@@ -1005,7 +1005,8 @@ class MainWindow(QMainWindow):
         if base.shape[:2] != self.state.warped_plan.shape[:2]:
             raise ValueError(MSG_OVERLAY_IMAGE_SIZE_MISMATCH)
         if self.state.blend_mode == BLEND_MODE_MULTIPLY:
-            return blend_multiply(base, self.state.warped_plan, self.state.overlay_alpha)
+            return blend_multiply(base, self.state.warped_plan, self.state.overlay_alpha,
+                                  validity_mask=self.state.warp_mask)
         return blend_overlay(base, self.state.warped_plan, self.state.overlay_alpha)
 
     def _run_alignment(self) -> None:

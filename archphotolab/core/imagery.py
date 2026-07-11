@@ -78,12 +78,22 @@ def blend_overlay(photo_image: np.ndarray, warped_plan_image: np.ndarray, alpha:
     return np.clip(result, IMAGE_VALUE_LOWER_CLIP, IMAGE_VALUE_UPPER_CLIP).astype(np.uint8)
 
 
-def blend_multiply(photo_image: np.ndarray, warped_plan_image: np.ndarray, alpha: float) -> np.ndarray:
+def blend_multiply(
+    photo_image: np.ndarray,
+    warped_plan_image: np.ndarray,
+    alpha: float,
+    validity_mask: Optional[np.ndarray] = None,
+) -> np.ndarray:
     """Multiply blend: plan white background disappears, dark lines stay.
 
-    Formula: result = photo * (plan / 255)
+    Formula (inside valid region): result = photo * (plan / 255)
+    Outside the warped plan boundary (border fill): photo is shown unchanged.
+
+    validity_mask: uint8 grayscale from warp_validity_mask (255=valid, 0=border).
+    If None, falls back to detecting the border fill as all-zero pixels.
+
     The alpha parameter controls blend strength:
-      alpha=1.0 -> full multiply
+      alpha=1.0 -> full multiply effect
       alpha=0.0 -> photo only
     """
     if photo_image is None or warped_plan_image is None:
@@ -95,10 +105,20 @@ def blend_multiply(photo_image: np.ndarray, warped_plan_image: np.ndarray, alpha
     photo = photo_image.astype(np.float32)
     plan = warped_plan_image.astype(np.float32)
 
-    # Pure multiply result
+    # Build the validity weight map (0.0 = border/no-data, 1.0 = valid plan area)
+    if validity_mask is not None:
+        valid = (validity_mask.astype(np.float32) / 255.0)[:, :, np.newaxis]
+    else:
+        # Fallback: treat all-zero pixels as border fill
+        valid = (warped_plan_image.sum(axis=2) > 0).astype(np.float32)[:, :, np.newaxis]
+
+    # Pure multiply result (only meaningful where valid)
     multiplied = photo * (plan / 255.0)
-    # Blend between photo (no effect) and multiplied result
-    result = photo * (1.0 - clamped_alpha) + multiplied * clamped_alpha
+
+    # In valid areas: blend photo and multiplied result at requested alpha
+    # In border areas (valid=0): show photo unchanged regardless of alpha
+    effective_alpha = clamped_alpha * valid
+    result = photo * (1.0 - effective_alpha) + multiplied * effective_alpha
     return np.clip(result, IMAGE_VALUE_LOWER_CLIP, IMAGE_VALUE_UPPER_CLIP).astype(np.uint8)
 
 

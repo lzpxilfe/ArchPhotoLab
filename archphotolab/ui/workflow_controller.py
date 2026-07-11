@@ -21,7 +21,7 @@ from archphotolab.constants import (
 )
 from archphotolab.constants import MSG_ALIGNMENT_MODE_UNSUPPORTED
 from archphotolab.constants import VIEW_MODE_PHOTO, VIEW_MODE_PLAN
-from archphotolab.core.geometry import AlignmentConfig, AlignmentResult, QualityProfile, estimate_transform, warp_plan_to_photo
+from archphotolab.core.geometry import AlignmentConfig, AlignmentResult, QualityProfile, estimate_transform, warp_plan_to_photo, warp_validity_mask
 from archphotolab.state import AlignmentProfile as StateAlignmentProfile, AppState
 
 
@@ -262,6 +262,14 @@ class WorkflowController:
             self.state.plan_image,
             self.state.homography,
             self.state.photo_image.shape,
+            mode=self.state.alignment_mode,
+            photo_points=self.state.photo_points,
+            plan_points=self.state.plan_points,
+        )
+        self.state.warp_mask = warp_validity_mask(
+            plan_shape=self.state.plan_image.shape,
+            transform_matrix=self.state.homography,
+            photo_shape=self.state.photo_image.shape,
             mode=self.state.alignment_mode,
             photo_points=self.state.photo_points,
             plan_points=self.state.plan_points,
