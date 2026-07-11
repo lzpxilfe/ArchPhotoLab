@@ -379,22 +379,29 @@ SPLIT_VIEW_RATIO_MAX_PERCENT: Final[int] = int(SPLIT_VIEW_MAX_RATIO * SPLIT_VIEW
 
 # Color theme
 PALETTE: Final[dict[str, str]] = {
-    "primary": "#0B0F19",
-    "secondary": "#111827",
-    "accent": "#38BDF8",
-    "accent_indigo": "#6366F1",
-    "text": "#F9FAFB",
-    "muted": "#9CA3AF",
-    "panel": "#1F2937",
-    "danger": "#EF4444",
+    "primary":       "#070B12",    # deepest bg
+    "secondary":     "#0D1526",    # panel bg
+    "surface":       "#111E35",    # raised surface (cards, rows)
+    "accent":        "#22D3EE",    # cyan-400
+    "accent_hover":  "#06B6D4",    # cyan-500
+    "accent_indigo": "#6366F1",    # indigo-500 – primary action
+    "accent_indigo_hover": "#4F46E5",  # indigo-600
+    "accent_indigo_press": "#3730A3",  # indigo-800
+    "border":        "rgba(255, 255, 255, 0.07)",
+    "border_hover":  "rgba(34, 211, 238, 0.30)",
+    "text":          "#EEF2FF",
+    "muted":         "#64748B",
+    "panel":         "#0F1827",
+    "danger":        "#F87171",
+    "success":       "#34D399",
 }
 
-IMAGE_PANEL_BACKGROUND_RGB: Final[tuple[int, int, int]] = (11, 15, 25)
-IMAGE_PANEL_BORDER_RGB: Final[tuple[int, int, int]] = (31, 41, 55)
-IMAGE_PANEL_TITLE_BAR_RGB: Final[tuple[int, int, int]] = (17, 24, 39)
-IMAGE_PANEL_TEXT_RGB: Final[tuple[int, int, int]] = (249, 250, 251)
+IMAGE_PANEL_BACKGROUND_RGB: Final[tuple[int, int, int]] = (7, 11, 18)
+IMAGE_PANEL_BORDER_RGB: Final[tuple[int, int, int]] = (17, 30, 53)
+IMAGE_PANEL_TITLE_BAR_RGB: Final[tuple[int, int, int]] = (10, 19, 36)
+IMAGE_PANEL_TEXT_RGB: Final[tuple[int, int, int]] = (238, 242, 255)
 IMAGE_PANEL_HINT_TEXT: Final[str] = "이미지를 불러와 주세요"
-IMAGE_PANEL_HINT_TEXT_RGB: Final[tuple[int, int, int]] = (180, 188, 205)
+IMAGE_PANEL_HINT_TEXT_RGB: Final[tuple[int, int, int]] = (100, 116, 139)
 
 POINT_WARNING_RGB: Final[tuple[int, int, int]] = (255, 99, 99)
 POINT_SELECTED_RGB: Final[tuple[int, int, int]] = (255, 196, 0)
@@ -419,35 +426,35 @@ POINT_LABEL_OFFSET_X: Final[int] = 2
 POINT_LABEL_OFFSET_Y: Final[int] = 4
 POINT_LABEL_FONT_SIZE: Final[int] = 7
 
-CONTROL_MIN_HEIGHT: Final[int] = 34
-CONTROL_MIN_WIDTH: Final[int] = 130
-SLIDER_MIN_WIDTH: Final[int] = 160
-COMBO_MIN_WIDTH: Final[int] = 140
-COMBO_MIN_HEIGHT: Final[int] = 24
+CONTROL_MIN_HEIGHT: Final[int] = 28
+CONTROL_MIN_WIDTH: Final[int] = 90
+SLIDER_MIN_WIDTH: Final[int] = 130
+COMBO_MIN_WIDTH: Final[int] = 120
+COMBO_MIN_HEIGHT: Final[int] = 28
 
 # Widget style literals
-GROUPBOX_MARGIN_TOP: Final[int] = 10
+GROUPBOX_MARGIN_TOP: Final[int] = 12
 GROUPBOX_PADDING_TOP: Final[int] = 8
 GROUPBOX_PADDING_RIGHT: Final[int] = 10
-GROUPBOX_PADDING_BOTTOM: Final[int] = 10
+GROUPBOX_PADDING_BOTTOM: Final[int] = 8
 GROUPBOX_PADDING_LEFT: Final[int] = 10
-GROUPBOX_TITLE_LEFT: Final[int] = 12
-GROUPBOX_TITLE_PADDING_X: Final[int] = 6
+GROUPBOX_TITLE_LEFT: Final[int] = 14
+GROUPBOX_TITLE_PADDING_X: Final[int] = 5
 GROUPBOX_BORDER_ALPHA_SUFFIX: Final[str] = "44"
 GROUPBOX_TITLE_BORDER_ALPHA_SUFFIX: Final[str] = "66"
-GROUPBOX_BORDER_RADIUS: Final[int] = 12
-BUTTON_FONT_WEIGHT: Final[int] = 700
-BUTTON_BORDER_RADIUS: Final[int] = 9
-BUTTON_PADDING_X: Final[int] = 12
-BUTTON_PADDING_Y: Final[int] = 7
+GROUPBOX_BORDER_RADIUS: Final[int] = 14
+BUTTON_FONT_WEIGHT: Final[int] = 500
+BUTTON_BORDER_RADIUS: Final[int] = 20
+BUTTON_PADDING_X: Final[int] = 14
+BUTTON_PADDING_Y: Final[int] = 5
 COMBO_BORDER_WIDTH: Final[int] = 1
 COMBO_PADDING_X: Final[int] = 10
-COMBO_PADDING_Y: Final[int] = 4
-COMBO_BORDER_RADIUS: Final[int] = 8
-CHECKBOX_SPACING: Final[int] = 6
-SLIDER_GROOVE_HEIGHT: Final[int] = 8
-SLIDER_GROOVE_RADIUS: Final[int] = 4
-SLIDER_HANDLE_SIZE: Final[int] = 18
+COMBO_PADDING_Y: Final[int] = 3
+COMBO_BORDER_RADIUS: Final[int] = 14
+CHECKBOX_SPACING: Final[int] = 5
+SLIDER_GROOVE_HEIGHT: Final[int] = 4
+SLIDER_GROOVE_RADIUS: Final[int] = 2
+SLIDER_HANDLE_SIZE: Final[int] = 15
 SLIDER_HANDLE_MARGIN_Y: Final[int] = -6
 PANEL_HEADER_PADDING: Final[str] = "4px 2px"
 PANEL_INFO_PADDING: Final[str] = "2px 4px"
