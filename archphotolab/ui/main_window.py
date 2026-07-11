@@ -474,12 +474,11 @@ class MainWindow(QMainWindow):
             lambda zoom, pan_x, pan_y: self._on_view_state_changed(VIEW_MODE_PLAN, zoom, pan_x, pan_y),
         )
 
+        controls.setContentsMargins(14, 12, 14, 12)
+
         controls_widget = QWidget()
+        controls_widget.setObjectName("ToolbarPanel")
         controls_widget.setLayout(controls)
-        controls_widget.setStyleSheet(
-            f"QWidget {{ background: {PALETTE['secondary']}; }}"
-            f"QWidget {{ border-radius: 14px; }}"
-        )
 
         root_layout.addWidget(intro_box)
         root_layout.addWidget(controls_widget)
@@ -527,15 +526,15 @@ QMainWindow, QMainWindow > QWidget {{
     background: {p["primary"]};
 }}
 
-/* ── GroupBox ─────────────────────────────────────── */
-QGroupBox {{
+/* ── GroupBox (#IntroCard) ────────────────────────── */
+#IntroCard {{
     background: {p["secondary"]};
     border: 1px solid rgba(255,255,255,0.06);
     border-radius: {GROUPBOX_BORDER_RADIUS}px;
     margin-top: {GROUPBOX_MARGIN_TOP}px;
     padding: {GROUPBOX_PADDING_TOP}px {GROUPBOX_PADDING_RIGHT}px {GROUPBOX_PADDING_BOTTOM}px {GROUPBOX_PADDING_LEFT}px;
 }}
-QGroupBox::title {{
+#IntroCard::title {{
     subcontrol-origin: margin;
     subcontrol-position: top left;
     left: {GROUPBOX_TITLE_LEFT}px;
@@ -544,6 +543,13 @@ QGroupBox::title {{
     font-weight: 600;
     font-size: {UI_FONT_SIZE - 1}pt;
     letter-spacing: 0.3px;
+}}
+
+/* ── ToolbarPanel ────────────────────────────────── */
+#ToolbarPanel {{
+    background: {p["secondary"]};
+    border: 1px solid rgba(255,255,255,0.06);
+    border-radius: 14px;
 }}
 
 /* ── Buttons ──────────────────────────────────────── */
@@ -722,6 +728,12 @@ QLabel.CardValue {{
 QLabel.CardSubValue {{
     color: {p["muted"]};
     font-size: 8pt;
+}}
+#StatusPanel {{
+    background: transparent;
+    border: none;
+    margin-top: 0px;
+    padding: 0px;
 }}
 #StatusCardGuide {{
     background: qlineargradient(x1:0,y1:0,x2:1,y2:1,

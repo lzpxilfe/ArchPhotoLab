@@ -1,16 +1,16 @@
 from __future__ import annotations
 
 from PySide6.QtCore import Qt
-from PySide6.QtWidgets import QGroupBox, QLabel, QVBoxLayout, QHBoxLayout, QGridLayout, QFrame
+from PySide6.QtWidgets import QWidget, QLabel, QVBoxLayout, QHBoxLayout, QGridLayout, QFrame
 
 from archphotolab.constants import (
     LABEL_STATUS_PANEL,
 )
 
 
-class StatusPanel(QGroupBox):
+class StatusPanel(QWidget):
     def __init__(self, parent=None) -> None:
-        super().__init__("", parent)
+        super().__init__(parent)
         self._build()
 
     def _build(self) -> None:
