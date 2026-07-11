@@ -3,7 +3,7 @@ from __future__ import annotations
 from typing import Optional, Sequence
 
 import numpy as np
-from PySide6.QtCore import Qt, QRect, Signal
+from PySide6.QtCore import Qt, QRect, Signal, Property, QPropertyAnimation, QEasingCurve
 from PySide6.QtGui import QColor, QFont, QFontMetrics, QImage, QPainter, QPen, QPixmap
 from PySide6.QtWidgets import QWidget
 
@@ -108,6 +108,20 @@ class ImagePanel(QWidget):
         self.setMouseTracking(True)
         self.setCursor(Qt.CrossCursor)
 
+        self._opacity = 1.0
+        self._fade_anim = QPropertyAnimation(self, b"imageOpacity")
+        self._fade_anim.setDuration(300)
+        self._fade_anim.setEasingCurve(QEasingCurve.OutQuad)
+
+    @Property(float)
+    def imageOpacity(self) -> float:
+        return self._opacity
+
+    @imageOpacity.setter
+    def imageOpacity(self, value: float) -> None:
+        self._opacity = value
+        self.update()
+
     def set_title(self, title: str) -> None:
         self._title = title
         self.update()
@@ -120,6 +134,7 @@ class ImagePanel(QWidget):
             self._image_height = 1
             self._img_width = 1
             self._img_height = 1
+            self._opacity = 1.0
             self.update()
             return
 
@@ -140,6 +155,11 @@ class ImagePanel(QWidget):
         self._img_height = self._image_height
         self._update_draw_geometry()
         self.update()
+
+        self._fade_anim.stop()
+        self._fade_anim.setStartValue(0.0)
+        self._fade_anim.setEndValue(1.0)
+        self._fade_anim.start()
 
     def set_points(
         self,
@@ -418,7 +438,9 @@ class ImagePanel(QWidget):
         if self._draw_pixmap is None:
             return
 
+        painter.setOpacity(self._opacity)
         painter.drawPixmap(self._img_left, self._img_top, self._draw_pixmap)
+        painter.setOpacity(1.0)
 
         warnings = set(self._warning_indices)
         max_error = max(self._point_errors) if self._point_errors else 0.0

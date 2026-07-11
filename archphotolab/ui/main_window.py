@@ -576,6 +576,8 @@ QPushButton:checked {{
 QPushButton:pressed {{
     background: rgba(255,255,255,0.03);
     border-color: rgba(255,255,255,0.05);
+    padding-top: {BUTTON_PADDING_Y + 2}px;
+    padding-bottom: {BUTTON_PADDING_Y - 2}px;
 }}
 QPushButton:disabled {{
     background: rgba(255,255,255,0.02);
