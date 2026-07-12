@@ -250,6 +250,7 @@ from archphotolab.core.geometry import warp_plan_to_photo
 from archphotolab.core.imagery import (
     blend_multiply,
     blend_overlay,
+    create_proxy_image,
     flatten_illumination,
     load_rgb_image,
     make_split_compare_image,
@@ -435,10 +436,31 @@ class MainWindow(QMainWindow):
         row4.addWidget(self.lbl_split_ratio)
         row4.addStretch()
 
+        row5 = QHBoxLayout()
+        row5.setSpacing(WORKFLOW_ROW3_SPACING)
+        self.chk_color_keying = QCheckBox(LABEL_ENABLE_COLOR_KEYING)
+        self.chk_color_keying.toggled.connect(self._toggle_color_keying)
+        self.chk_color_keying.setChecked(self.state.color_keying_enabled)
+        
+        self.lbl_color_keying_tol = QLabel(LABEL_COLOR_KEYING_TOLERANCE)
+        self.slider_color_keying = QSlider(Qt.Horizontal)
+        self.slider_color_keying.setRange(0, MAX_COLOR_KEYING_TOLERANCE)
+        self.slider_color_keying.setValue(self.state.color_keying_tolerance)
+        self.slider_color_keying.valueChanged.connect(self._on_color_keying_tolerance_changed)
+        self.slider_color_keying.setMinimumWidth(SLIDER_MIN_WIDTH)
+        self.lbl_color_keying_val = QLabel(f"{self.state.color_keying_tolerance}")
+        
+        row5.addWidget(self.chk_color_keying)
+        row5.addWidget(self.lbl_color_keying_tol)
+        row5.addWidget(self.slider_color_keying)
+        row5.addWidget(self.lbl_color_keying_val)
+        row5.addStretch()
+
         controls.addLayout(row1)
         controls.addLayout(row2)
         controls.addLayout(row3)
         controls.addLayout(row4)
+        controls.addLayout(row5)
 
         panels = QHBoxLayout()
         self.photo_panel, self.photo_view, self.photo_info = self._create_panel(LABEL_PHOTO_PANEL)
@@ -501,6 +523,8 @@ class MainWindow(QMainWindow):
             self.point_editor.btn_up,
             self.point_editor.btn_down,
             self.btn_compare_checkbox(),
+            self.chk_color_keying,
+            self.slider_color_keying,
         )
         self._setup_tooltips()
 
@@ -512,6 +536,23 @@ class MainWindow(QMainWindow):
         for widget in widgets:
             if isinstance(widget, QSlider):
                 widget.setMinimumWidth(SLIDER_MIN_WIDTH)
+
+    def _toggle_color_keying(self, checked: bool) -> None:
+        self.state.color_keying_enabled = checked
+        if self.state.plan_image is not None and len(self.state.plan_points) >= MIN_ALIGNMENT_POINTS:
+            self._run_alignment()
+        else:
+            self._refresh_result_view()
+        self._sync_controls()
+
+    def _on_color_keying_tolerance_changed(self, value: int) -> None:
+        self.state.color_keying_tolerance = int(value)
+        self.lbl_color_keying_val.setText(f"{value}")
+        if self.state.color_keying_enabled:
+            if self.state.plan_image is not None and len(self.state.plan_points) >= MIN_ALIGNMENT_POINTS:
+                self._run_alignment()
+            else:
+                self._refresh_result_view()
 
     def _setup_tooltips(self) -> None:
         self.btn_open_photo.setToolTip("정합의 기준이 되는 드론 촬영 원본 사진(.png, .jpg)을 불러옵니다.")
@@ -539,6 +580,8 @@ class MainWindow(QMainWindow):
         self.point_editor.btn_redo.setToolTip("되돌렸던 점 추가/이동 작업을 다시 실행합니다.")
         self.point_editor.btn_up.setToolTip("선택한 매칭 점의 리스트 내 정렬 순서를 위로 올려 매칭 쌍의 번호 순서를 바꿉니다.")
         self.point_editor.btn_down.setToolTip("선택한 매칭 점의 리스트 내 정렬 순서를 아래로 내려 매칭 쌍의 번호 순서를 바꿉니다.")
+        self.chk_color_keying.setToolTip("도면의 여백이나 특정 단일 배경색을 찾아내어 투명하게 걷어냅니다.")
+        self.slider_color_keying.setToolTip("배경 투명화 시 색상의 일치 오차 범위를 미세 조절합니다.")
 
     def _apply_theme(self) -> None:
         p = PALETTE
@@ -988,7 +1031,9 @@ QToolTip {{
         if not self.btn_point_mode.isChecked():
             return
 
-        image = self.state.photo_image if side == VIEW_MODE_PHOTO else self.state.plan_image
+        image = self.state.photo_image_raw if side == VIEW_MODE_PHOTO else self.state.plan_image_raw
+        if image is None:
+            image = self.state.photo_image if side == VIEW_MODE_PHOTO else self.state.plan_image
         if image is None:
             return
         self.controller.add_point(
@@ -1006,7 +1051,9 @@ QToolTip {{
     def _on_point_move_started(self, side: str, index: int, x: float, y: float) -> None:
         if not self.btn_point_mode.isChecked():
             return
-        image = self.state.photo_image if side == VIEW_MODE_PHOTO else self.state.plan_image
+        image = self.state.photo_image_raw if side == VIEW_MODE_PHOTO else self.state.plan_image_raw
+        if image is None:
+            image = self.state.photo_image if side == VIEW_MODE_PHOTO else self.state.plan_image
         if image is None:
             return
         self._point_dragging_side = side
@@ -1024,7 +1071,9 @@ QToolTip {{
     def _on_point_moved(self, side: str, index: int, x: float, y: float) -> None:
         if not self.btn_point_mode.isChecked():
             return
-        image = self.state.photo_image if side == VIEW_MODE_PHOTO else self.state.plan_image
+        image = self.state.photo_image_raw if side == VIEW_MODE_PHOTO else self.state.plan_image_raw
+        if image is None:
+            image = self.state.photo_image if side == VIEW_MODE_PHOTO else self.state.plan_image
         if image is None:
             return
         self.controller.move_point(
@@ -1039,7 +1088,9 @@ QToolTip {{
         self._refresh_point_overlays()
 
     def _on_point_move_finished(self, side: str, index: int, x: float, y: float) -> None:
-        image = self.state.photo_image if side == VIEW_MODE_PHOTO else self.state.plan_image
+        image = self.state.photo_image_raw if side == VIEW_MODE_PHOTO else self.state.plan_image_raw
+        if image is None:
+            image = self.state.photo_image if side == VIEW_MODE_PHOTO else self.state.plan_image
         if image is None or not self.btn_point_mode.isChecked():
             return
         self.controller.move_point(
@@ -1177,12 +1228,6 @@ QToolTip {{
         if self.state.photo_image is None:
             self._set_message(MSG_EXPORT_REQUIRE_PHOTO, is_error=True)
             return
-        if (
-            self.state.warped_plan is None
-            and len(self.state.photo_points) >= MIN_ALIGNMENT_POINTS
-            and len(self.state.plan_points) >= MIN_ALIGNMENT_POINTS
-        ):
-            self._run_alignment()
 
         output_dir = QFileDialog.getExistingDirectory(self, FILE_SELECT_EXPORT_FOLDER_TITLE, self.last_dir)
         if not output_dir:
@@ -1194,18 +1239,78 @@ QToolTip {{
             saved = []
             missing = []
 
-            flat_image = self.state.flattened_photo
-            if flat_image is None and self.state.photo_image is not None:
-                flat_image = self._ensure_flattened(force=True)
+            # 1. Flat photo generation in high-res original size
+            photo_raw = self.state.photo_image_raw
+            if photo_raw is None:
+                photo_raw = self.state.photo_image  # Fallback to proxy
+                
+            flat_image = None
+            if self.state.show_flat_photo:
+                from archphotolab.core.imagery import flatten_illumination
+                flat_image = flatten_illumination(
+                    photo_raw,
+                    self.state.flatten_intensity,
+                    self.state.flatten_preset
+                )
             if flat_image is None:
-                raise ValueError(MSG_FLATTEN_REQUIRED)
+                flat_image = photo_raw
+
             saved_flat_path = save_png(flat_path, flat_image)
             saved.append(MSG_EXPORT_SAVED_FLAT_FMT.format(filename=Path(saved_flat_path).name))
 
-            if self.state.warped_plan is not None:
-                saved_warped_path = save_png(warped_path, self.state.warped_plan)
+            # 2. Warp plan and compose overlay in high-res original size
+            warped_plan_raw = None
+            overlay_raw = None
+            
+            if len(self.state.photo_points) >= MIN_ALIGNMENT_POINTS:
+                from archphotolab.core.geometry import estimate_transform, warp_plan_to_photo, warp_validity_mask, AlignmentConfig
+                
+                # Estimate high-res transform matrix using original coordinates points
+                config = AlignmentConfig(mode=self.state.alignment_mode)
+                res = estimate_transform(self.state.photo_points, self.state.plan_points, config=config)
+                
+                if res.matrix is not None and self.state.plan_image_raw is not None:
+                    # Apply color keying to raw plan if enabled
+                    plan_raw_src = self.state.plan_image_raw
+                    if self.state.color_keying_enabled:
+                        from archphotolab.core.imagery import apply_color_keying
+                        plan_raw_src = apply_color_keying(
+                            plan_raw_src,
+                            self.state.color_keying_target,
+                            self.state.color_keying_tolerance
+                        )
+                        
+                    # Warp high-res plan
+                    warped_plan_raw = warp_plan_to_photo(
+                        plan_raw_src,
+                        res.matrix,
+                        photo_raw.shape,
+                        mode=self.state.alignment_mode,
+                        photo_points=self.state.photo_points,
+                        plan_points=self.state.plan_points,
+                    )
+                    
+                    # Compute high-res validity mask
+                    warp_mask_raw = warp_validity_mask(
+                        plan_shape=self.state.plan_image_raw.shape,
+                        transform_matrix=res.matrix,
+                        photo_shape=photo_raw.shape,
+                        mode=self.state.alignment_mode,
+                        photo_points=self.state.photo_points,
+                        plan_points=self.state.plan_points,
+                    )
+                    
+                    # Compose high-res overlay
+                    base_raw = flat_image if self.state.show_flat_photo else photo_raw
+                    if self.state.blend_mode == BLEND_MODE_MULTIPLY:
+                        overlay_raw = blend_multiply(base_raw, warped_plan_raw, self.state.overlay_alpha, validity_mask=warp_mask_raw)
+                    else:
+                        overlay_raw = blend_overlay(base_raw, warped_plan_raw, self.state.overlay_alpha)
+            
+            if warped_plan_raw is not None:
+                saved_warped_path = save_png(warped_path, warped_plan_raw)
                 saved.append(MSG_EXPORT_SAVED_WARPED_FMT.format(filename=Path(saved_warped_path).name))
-                saved_overlay_path = save_png(overlay_path, self._compose_overlay())
+                saved_overlay_path = save_png(overlay_path, overlay_raw)
                 saved.append(MSG_EXPORT_SAVED_OVERLAY_FMT.format(filename=Path(saved_overlay_path).name))
             else:
                 missing.append(MSG_EXPORT_MISSING_OVERLAY)
@@ -1284,9 +1389,14 @@ QToolTip {{
                 resolved = resolve_saved_image_path(self.state.photo_path, file_path, [self.last_dir])
                 if resolved:
                     self.state.photo_path = resolved
-                    self.state.photo_image = load_rgb_image(resolved)
+                    raw_img = load_rgb_image(resolved)
+                    self.state.photo_image_raw = raw_img
+                    proxy_img, proxy_scale = create_proxy_image(raw_img)
+                    self.state.photo_image = proxy_img
+                    self.state.photo_proxy_scale = proxy_scale
                 else:
                     self.state.photo_image = None
+                    self.state.photo_image_raw = None
                     self.state.photo_points = []
                     missing.append(MSG_LOAD_MISSING_PHOTO)
 
@@ -1294,9 +1404,15 @@ QToolTip {{
                 resolved = resolve_saved_image_path(self.state.plan_path, file_path, [self.last_dir])
                 if resolved:
                     self.state.plan_path = resolved
-                    self.state.plan_image = load_rgb_image(resolved)
+                    raw_img = load_rgb_image(resolved)
+                    self.state.plan_image_raw = raw_img
+                    proxy_img, proxy_scale = create_proxy_image(raw_img)
+                    self.state.plan_image = proxy_img
+                    self.state.plan_proxy_scale = proxy_scale
+                    self.state.color_keying_target = tuple(map(int, raw_img[0, 0]))
                 else:
                     self.state.plan_image = None
+                    self.state.plan_image_raw = None
                     self.state.plan_points = []
                     missing.append(MSG_LOAD_MISSING_PLAN)
 
@@ -1309,12 +1425,7 @@ QToolTip {{
 
                 if self.state.homography is not None:
                     try:
-                        self.state.warped_plan = warp_plan_to_photo(
-                            self.state.plan_image,
-                            self.state.homography,
-                            self.state.photo_image.shape,
-                            mode=self.state.alignment_mode,
-                        )
+                        self._run_alignment()
                     except Exception:
                         self.state.clear_alignment()
 
@@ -1430,6 +1541,14 @@ QToolTip {{
         self.chk_compare_split.setEnabled(self.state.photo_image is not None)
         self.slider_split_ratio.setEnabled(self.state.photo_image is not None and self.state.flattened_photo is not None)
         self.cmb_alignment_mode.setEnabled(self.state.photo_image is not None and self.state.plan_image is not None)
+        
+        # Synchronize color screening UI states
+        self.chk_color_keying.setEnabled(self.state.plan_image is not None)
+        self.chk_color_keying.setChecked(self.state.color_keying_enabled)
+        self.slider_color_keying.setEnabled(self.state.plan_image is not None and self.state.color_keying_enabled)
+        self.slider_color_keying.setValue(self.state.color_keying_tolerance)
+        self.lbl_color_keying_val.setText(f"{self.state.color_keying_tolerance}")
+        
         self.btn_align.setText(VIEW_BUTTON_ALIGN)
 
     def _refresh_panel_images(self) -> None:
@@ -1443,9 +1562,13 @@ QToolTip {{
                 self.state.photo_view_pan_x,
                 self.state.photo_view_pan_y,
             )
-            self.photo_view.set_image(self._photo_view_display_image())
+            self.photo_view.set_image(self._photo_view_display_image(), self.state.photo_proxy_scale)
             photo_name = Path(self.state.photo_path).name if self.state.photo_path else TEMP_FILE_NAME
-            photo_info = f"{VIEW_LABEL_PHOTO}: {photo_name} ({self.state.photo_image.shape[1]} x {self.state.photo_image.shape[0]})"
+            
+            # Show original raw dimension for user readability
+            raw_w = self.state.photo_image_raw.shape[1] if self.state.photo_image_raw is not None else self.state.photo_image.shape[1]
+            raw_h = self.state.photo_image_raw.shape[0] if self.state.photo_image_raw is not None else self.state.photo_image.shape[0]
+            photo_info = f"{VIEW_LABEL_PHOTO}: {photo_name} ({raw_w} x {raw_h})"
         self.photo_info.setText(photo_info)
 
         plan_info = IMAGE_PANEL_EMPTY_TEXT
@@ -1458,9 +1581,12 @@ QToolTip {{
                 self.state.plan_view_pan_x,
                 self.state.plan_view_pan_y,
             )
-            self.plan_view.set_image(self.state.plan_image)
+            self.plan_view.set_image(self.state.plan_image, self.state.plan_proxy_scale)
             plan_name = Path(self.state.plan_path).name if self.state.plan_path else TEMP_FILE_NAME
-            plan_info = f"{VIEW_LABEL_PLAN}: {plan_name} ({self.state.plan_image.shape[1]} x {self.state.plan_image.shape[0]})"
+            
+            raw_w = self.state.plan_image_raw.shape[1] if self.state.plan_image_raw is not None else self.state.plan_image.shape[1]
+            raw_h = self.state.plan_image_raw.shape[0] if self.state.plan_image_raw is not None else self.state.plan_image.shape[0]
+            plan_info = f"{VIEW_LABEL_PLAN}: {plan_name} ({raw_w} x {raw_h})"
         self.plan_info.setText(plan_info)
 
     def _warning_indices(self) -> set[int]:
@@ -1632,7 +1758,13 @@ QToolTip {{
         try:
             image = load_rgb_image(file_path)
             self.state.photo_path = file_path
-            self.state.photo_image = image
+            self.state.photo_image_raw = image
+            
+            # Create proxy for high performance UI interaction
+            proxy_img, proxy_scale = create_proxy_image(image)
+            self.state.photo_image = proxy_img
+            self.state.photo_proxy_scale = proxy_scale
+            
             self.state.photo_points = []
             self.state.selected_photo_point = None
             self.state.flattened_photo = None
@@ -1672,11 +1804,21 @@ QToolTip {{
         try:
             image = load_rgb_image(file_path)
             self.state.plan_path = file_path
-            self.state.plan_image = image
+            self.state.plan_image_raw = image
+            
+            # Create proxy for high performance UI interaction
+            proxy_img, proxy_scale = create_proxy_image(image)
+            self.state.plan_image = proxy_img
+            self.state.plan_proxy_scale = proxy_scale
+            
             self.state.plan_points = []
             self.state.selected_plan_point = None
             self.state.clear_alignment()
             self.last_dir = str(Path(file_path).parent)
+            
+            # Default target color screening to upper-left corner background color
+            self.state.color_keying_target = tuple(map(int, image[0, 0]))
+            
             self._set_message(MSG_FILE_LOADED_FMT.format(label=VIEW_LABEL_PLAN, name=Path(file_path).name))
             self._refresh_ui()
         except Exception as exc:

@@ -17,7 +17,7 @@ from archphotolab.constants import (
     OVERLAY_ALPHA_DEFAULT,
     SPLIT_VIEW_DEFAULT_RATIO,
     VIEW_MODE_OVERLAY,
-    VIEW_MODE_PHOTO,
+    DEFAULT_COLOR_KEYING_TOLERANCE,
 )
 
 
@@ -58,8 +58,13 @@ class AppState:
     photo_points: List[Point] = field(default_factory=list)
     plan_points: List[Point] = field(default_factory=list)
 
-    photo_image: Optional[np.ndarray] = None  # RGB uint8
-    plan_image: Optional[np.ndarray] = None  # RGB uint8
+    photo_image_raw: Optional[np.ndarray] = None  # Original high-res photo RGB uint8
+    plan_image_raw: Optional[np.ndarray] = None   # Original high-res plan RGB uint8
+    photo_proxy_scale: float = 1.0                # scale factor = proxy_width / raw_width
+    plan_proxy_scale: float = 1.0
+
+    photo_image: Optional[np.ndarray] = None  # RGB uint8 (Proxy sized)
+    plan_image: Optional[np.ndarray] = None  # RGB uint8 (Proxy sized)
 
     flattened_photo: Optional[np.ndarray] = None  # RGB uint8
     show_flat_photo: bool = False
@@ -76,6 +81,9 @@ class AppState:
 
     overlay_alpha: float = OVERLAY_ALPHA_DEFAULT
     blend_mode: str = BLEND_MODE_DEFAULT
+    color_keying_enabled: bool = False
+    color_keying_tolerance: int = DEFAULT_COLOR_KEYING_TOLERANCE
+    color_keying_target: Optional[Tuple[int, int, int]] = None  # Target RGB color to make transparent
     reprojection_errors: List[float] = field(default_factory=list)
     reprojection_avg: Optional[float] = None
     reprojection_max: Optional[float] = None

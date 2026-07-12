@@ -21,6 +21,7 @@ from archphotolab.constants import (
     FLATTEN_PRESET_SOFT,
     IMAGE_COLOR_CHANNEL_INDEX,
     IMAGE_EXT_MAX,
+    IMAGE_PROXY_MAX_DIM,
     IMAGE_VALUE_COUNT,
     IMAGE_VALUE_LOWER_CLIP,
     IMAGE_VALUE_UPPER_CLIP,
@@ -64,7 +65,7 @@ def load_rgb_image(path: str) -> np.ndarray:
 
 
 def blend_overlay(photo_image: np.ndarray, warped_plan_image: np.ndarray, alpha: float) -> np.ndarray:
-    """Blend two RGB images in photo coordinate space (normal/opacity mode)."""
+    """Blend two RGB/RGBA images in photo coordinate space (normal/opacity mode)."""
     if photo_image is None or warped_plan_image is None:
         raise ValueError(MSG_OVERLAY_IMAGE_MISSING)
     if warped_plan_image.shape[:2] != photo_image.shape[:2]:
@@ -72,9 +73,17 @@ def blend_overlay(photo_image: np.ndarray, warped_plan_image: np.ndarray, alpha:
 
     clamped_alpha = float(np.clip(alpha, 0.0, 1.0))
     photo = photo_image.astype(np.float32)
-    plan = warped_plan_image.astype(np.float32)
-
-    result = photo * (1.0 - clamped_alpha) + plan * clamped_alpha
+    
+    # Handle RGBA plan input
+    if warped_plan_image.shape[2] == 4:
+        plan_rgb = warped_plan_image[:, :, :3].astype(np.float32)
+        plan_alpha = (warped_plan_image[:, :, 3].astype(np.float32) / 255.0)[:, :, np.newaxis]
+        effective_alpha = clamped_alpha * plan_alpha
+        result = photo * (1.0 - effective_alpha) + plan_rgb * effective_alpha
+    else:
+        plan = warped_plan_image.astype(np.float32)
+        result = photo * (1.0 - clamped_alpha) + plan * clamped_alpha
+        
     return np.clip(result, IMAGE_VALUE_LOWER_CLIP, IMAGE_VALUE_UPPER_CLIP).astype(np.uint8)
 
 
@@ -91,10 +100,6 @@ def blend_multiply(
 
     validity_mask: uint8 grayscale from warp_validity_mask (255=valid, 0=border).
     If None, falls back to detecting the border fill as all-zero pixels.
-
-    The alpha parameter controls blend strength:
-      alpha=1.0 -> full multiply effect
-      alpha=0.0 -> photo only
     """
     if photo_image is None or warped_plan_image is None:
         raise ValueError(MSG_OVERLAY_IMAGE_MISSING)
@@ -103,21 +108,29 @@ def blend_multiply(
 
     clamped_alpha = float(np.clip(alpha, 0.0, 1.0))
     photo = photo_image.astype(np.float32)
-    plan = warped_plan_image.astype(np.float32)
+    
+    # Check if plan has an alpha channel
+    has_alpha = (warped_plan_image.shape[2] == 4)
+    if has_alpha:
+        plan_rgb = warped_plan_image[:, :, :3].astype(np.float32)
+        plan_alpha = (warped_plan_image[:, :, 3].astype(np.float32) / 255.0)[:, :, np.newaxis]
+    else:
+        plan_rgb = warped_plan_image.astype(np.float32)
+        plan_alpha = np.ones((warped_plan_image.shape[0], warped_plan_image.shape[1], 1), dtype=np.float32)
 
     # Build the validity weight map (0.0 = border/no-data, 1.0 = valid plan area)
     if validity_mask is not None:
         valid = (validity_mask.astype(np.float32) / 255.0)[:, :, np.newaxis]
     else:
-        # Fallback: treat all-zero pixels as border fill
-        valid = (warped_plan_image.sum(axis=2) > 0).astype(np.float32)[:, :, np.newaxis]
+        # Fallback: treat all-zero pixels as border fill (check RGB channels)
+        valid = (plan_rgb.sum(axis=2) > 0).astype(np.float32)[:, :, np.newaxis]
 
     # Pure multiply result (only meaningful where valid)
-    multiplied = photo * (plan / 255.0)
+    multiplied = photo * (plan_rgb / 255.0)
 
-    # In valid areas: blend photo and multiplied result at requested alpha
+    # In valid areas: blend photo and multiplied result at effective alpha (including plan's alpha)
     # In border areas (valid=0): show photo unchanged regardless of alpha
-    effective_alpha = clamped_alpha * valid
+    effective_alpha = clamped_alpha * valid * plan_alpha
     result = photo * (1.0 - effective_alpha) + multiplied * effective_alpha
     return np.clip(result, IMAGE_VALUE_LOWER_CLIP, IMAGE_VALUE_UPPER_CLIP).astype(np.uint8)
 
@@ -227,3 +240,57 @@ def make_split_compare_image(
     right = processed[:, split:]
     out = np.concatenate([left, right], axis=1)
     return out.astype(np.uint8)
+
+
+def create_proxy_image(image: np.ndarray) -> Tuple[np.ndarray, float]:
+    """Downsample image if it exceeds maximum proxy dimensions, returning (proxy_image, scale_ratio)."""
+    if image is None:
+        return None, 1.0
+    h, w = image.shape[:2]
+    max_dim = max(h, w)
+    
+    if max_dim <= IMAGE_PROXY_MAX_DIM:
+        return image.copy(), 1.0
+        
+    scale = float(IMAGE_PROXY_MAX_DIM) / float(max_dim)
+    new_w = int(round(w * scale))
+    new_h = int(round(h * scale))
+    
+    proxy = cv2.resize(image, (new_w, new_h), interpolation=cv2.INTER_AREA)
+    # recalculate actual scale based on exact integer dimensions
+    actual_scale = float(new_w) / float(w)
+    return proxy, actual_scale
+
+
+def apply_color_keying(image: np.ndarray, target_rgb: Tuple[int, int, int], tolerance: int) -> np.ndarray:
+    """Convert white/colored background pixels matching target_rgb within tolerance to transparent.
+    
+    Returns 4-channel RGBA numpy array.
+    """
+    if image is None:
+        return None
+        
+    # Ensure we work in RGB first
+    if image.shape[2] == 4:
+        rgb = image[:, :, :3]
+        alpha = image[:, :, 3].copy()
+    else:
+        rgb = image
+        alpha = np.full((image.shape[0], image.shape[1]), 255, dtype=np.uint8)
+        
+    if target_rgb is None:
+        # Default to (0,0) pixel color as target background key if none provided
+        target_rgb = tuple(map(int, rgb[0, 0]))
+        
+    # Calculate Euclidean distance in color space
+    tr, tg, tb = target_rgb
+    diff = rgb.astype(np.float32) - np.array([tr, tg, tb], dtype=np.float32)
+    dist = np.sqrt(np.sum(diff ** 2, axis=2))
+    
+    # Mask out matching pixels (distance <= tolerance)
+    mask = dist <= float(tolerance)
+    alpha[mask] = 0
+    
+    # Merge back to RGBA
+    rgba = cv2.merge([rgb[:, :, 0], rgb[:, :, 1], rgb[:, :, 2], alpha])
+    return rgba

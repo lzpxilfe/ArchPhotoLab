@@ -258,8 +258,18 @@ class WorkflowController:
             outlier_indices=result.outlier_indices,
         )
 
+        # Check if color screening is enabled for plan rendering
+        plan_src = self.state.plan_image
+        if self.state.color_keying_enabled and plan_src is not None:
+            from archphotolab.core.imagery import apply_color_keying
+            plan_src = apply_color_keying(
+                plan_src,
+                self.state.color_keying_target,
+                self.state.color_keying_tolerance
+            )
+
         self.state.warped_plan = warp_plan_to_photo(
-            self.state.plan_image,
+            plan_src,
             self.state.homography,
             self.state.photo_image.shape,
             mode=self.state.alignment_mode,

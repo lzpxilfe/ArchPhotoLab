@@ -103,6 +103,7 @@ class ImagePanel(QWidget):
         self._img_height = 1
         self._pan_offset_x = 0
         self._pan_offset_y = 0
+        self._proxy_scale = 1.0
 
         self.setMinimumSize(*MIN_PANEL_SIZE)
         self.setMouseTracking(True)
@@ -126,7 +127,8 @@ class ImagePanel(QWidget):
         self._title = title
         self.update()
 
-    def set_image(self, image: Optional[np.ndarray]) -> None:
+    def set_image(self, image: Optional[np.ndarray], proxy_scale: float = 1.0) -> None:
+        self._proxy_scale = float(proxy_scale)
         if image is None:
             self._pixmap = None
             self._draw_pixmap = None
@@ -138,21 +140,33 @@ class ImagePanel(QWidget):
             self.update()
             return
 
-        if image.ndim != POINT_PANEL_COLOR_CHANNELS or image.shape[2] != IMAGE_COLOR_CHANNEL_INDEX + 1:
+        h, w, c = image.shape
+        if c == 4:
+            # 4-channel RGBA
+            qimg = QImage(
+                image.data,
+                w,
+                h,
+                image.strides[0],
+                QImage.Format_RGBA8888,
+            ).copy()
+        elif c == 3:
+            # 3-channel RGB
+            qimg = QImage(
+                image.data,
+                w,
+                h,
+                image.strides[0],
+                QImage.Format_RGB888,
+            ).copy()
+        else:
             raise ValueError(MSG_IMAGE_RGB_ONLY)
 
-        qimg = QImage(
-            image.data,
-            image.shape[1],
-            image.shape[0],
-            image.strides[0],
-            QImage.Format_RGB888,
-        ).copy()
         self._pixmap = QPixmap.fromImage(qimg)
-        self._image_width = int(image.shape[1])
-        self._image_height = int(image.shape[0])
-        self._img_width = self._image_width
-        self._img_height = self._image_height
+        self._image_width = int(w)
+        self._image_height = int(h)
+        self._img_width = w
+        self._img_height = h
         self._update_draw_geometry()
         self.update()
 
@@ -247,9 +261,12 @@ class ImagePanel(QWidget):
     def _to_widget_from_image(self, point: tuple[float, float]) -> Optional[tuple[int, int]]:
         if self._pixmap is None:
             return None
+        # Convert raw coordinates to proxy coordinates first
+        px = point[0] * self._proxy_scale
+        py = point[1] * self._proxy_scale
         return (
-            self._img_left + int(round(point[0] * self._display_scale)),
-            self._img_top + int(round(point[1] * self._display_scale)),
+            self._img_left + int(round(px * self._display_scale)),
+            self._img_top + int(round(py * self._display_scale)),
         )
 
     def _from_widget_to_image(self, x: float, y: float) -> Optional[tuple[float, float]]:
@@ -257,9 +274,15 @@ class ImagePanel(QWidget):
             return None
         img_x = (x - self._img_left) / self._display_scale
         img_y = (y - self._img_top) / self._display_scale
+        
+        # Check boundaries inside proxy resolution
         if img_x < 0 or img_y < 0 or img_x >= self._image_width or img_y >= self._image_height:
             return None
-        return float(img_x), float(img_y)
+            
+        # Convert proxy coordinate back to raw resolution coordinate
+        raw_x = img_x / self._proxy_scale
+        raw_y = img_y / self._proxy_scale
+        return float(raw_x), float(raw_y)
 
     def _find_point_at(self, widget_x: float, widget_y: float) -> Optional[int]:
         if self._pixmap is None or self._from_widget_to_image(widget_x, widget_y) is None:

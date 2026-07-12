@@ -538,3 +538,14 @@ class ProjectKeys:
     PLAN_VIEW_PAN_X: Final[str] = "plan_view_pan_x"
     PLAN_VIEW_PAN_Y: Final[str] = "plan_view_pan_y"
     BLEND_MODE: Final[str] = "blend_mode"
+    COLOR_KEYING_ENABLED: Final[str] = "color_keying_enabled"
+    COLOR_KEYING_TOLERANCE: Final[str] = "color_keying_tolerance"
+
+
+# Proxy & Color Screening Constants
+IMAGE_PROXY_MAX_DIM: Final[int] = 2048
+DEFAULT_COLOR_KEYING_TOLERANCE: Final[int] = 15
+MAX_COLOR_KEYING_TOLERANCE: Final[int] = 100
+LABEL_ENABLE_COLOR_KEYING: Final[str] = "도면 배경 투명화"
+LABEL_COLOR_KEYING_TOLERANCE: Final[str] = "투명 감도"
+
