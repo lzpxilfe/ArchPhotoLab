@@ -17,6 +17,7 @@ from archphotolab.constants import (
     OVERLAY_ALPHA_DEFAULT,
     SPLIT_VIEW_DEFAULT_RATIO,
     VIEW_MODE_OVERLAY,
+    VIEW_MODE_PHOTO,
     DEFAULT_COLOR_KEYING_TOLERANCE,
 )
 
