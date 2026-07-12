@@ -502,6 +502,7 @@ class MainWindow(QMainWindow):
             self.point_editor.btn_down,
             self.btn_compare_checkbox(),
         )
+        self._setup_tooltips()
 
     def btn_compare_checkbox(self) -> QCheckBox:
         return self.chk_compare_flat
@@ -511,6 +512,33 @@ class MainWindow(QMainWindow):
         for widget in widgets:
             if isinstance(widget, QSlider):
                 widget.setMinimumWidth(SLIDER_MIN_WIDTH)
+
+    def _setup_tooltips(self) -> None:
+        self.btn_open_photo.setToolTip("정합의 기준이 되는 드론 촬영 원본 사진(.png, .jpg)을 불러옵니다.")
+        self.btn_open_plan.setToolTip("드론 사진 위에 겹쳐서 비교할 설계 도면 또는 기준 지형도 이미지(.png, .jpg)를 불러옵니다.")
+        self.btn_load_project.setToolTip("기존에 저장했던 프로젝트 파일(.json)과 찍어둔 매칭 점들을 불러옵니다.")
+        self.btn_save_project.setToolTip("현재 불러온 이미지 경로 및 찍어둔 매칭 점 상태를 프로젝트 파일(.json)로 저장합니다.")
+        self.btn_point_mode.setToolTip("드론 사진과 도면 상에 매칭 점을 찍을 수 있는 편집 모드를 켜거나 끕니다.")
+        self.btn_align.setToolTip("최소 3개(TPS는 5개) 이상의 매칭 점 정보를 기준으로 이미지 공간 정합 변환을 실행합니다.")
+        self.btn_align_skip.setToolTip("선택된 특정 점을 임시 제외하고 정합 변환을 계산하여 오차 요인을 시뮬레이션합니다.")
+        self.btn_flatten.setToolTip("도면/사진의 불균일한 조명과 그림자를 제거하여 비교하기 편하게 평탄화합니다.")
+        self.chk_compare_flat.setToolTip("평탄화가 적용된 드론 사진 결과를 원본 이미지와 겹쳐서 비교합니다.")
+        self.chk_compare_split.setToolTip("가로 슬라이더 비율에 맞춰 사진과 도면을 좌우로 나누어 비교하는 스플릿 뷰를 켭니다.")
+        self.btn_delete_point.setToolTip("선택한 점 매칭 쌍을 삭제합니다.")
+        self.btn_export.setToolTip("정합이 완료된 오버레이 결과 이미지(또는 변형 도면)를 파일로 고화질 내보내기 합니다.")
+        
+        self.cmb_view.setToolTip("결과 뷰 모드 설정:\n- 드론 사진 단독\n- 도면 이미지 단독\n- 사진+도면 오버레이 중첩 뷰")
+        self.slider_alpha.setToolTip("사진 위에 겹쳐진 도면 오버레이 이미지의 투명도(불투명도) 비율을 실시간 조절합니다.")
+        self.cmb_alignment_mode.setToolTip("정합 기하 모델 설정:\n- Homography(투영): 원근 왜곡 보정\n- Affine: 회전, 크기, 기울기 보정\n- Similarity: 회전, 크기, 평행이동만 보정\n- TPS: 5쌍 이상의 점으로 구부러짐이나 국소 지형 기복을 자유 변형 보정")
+        self.cmb_blend_mode.setToolTip("오버레이 중첩 합성 기술 설정:\n- 일반: 일반 불투명도 기반 투영 중첩\n- 곱하기(Multiply): 도면의 밝은 흰색 배경 영역을 완전히 투명화하고 검은 선만 뚜렷하게 합성")
+        self.cmb_flatten_preset.setToolTip("그림자 제거(평탄화)에 적용할 프리셋 유형을 변경합니다.")
+        self.slider_flat_intensity.setToolTip("그림자 제거(평탄화) 알고리즘의 보정 강도를 조절합니다.")
+        self.slider_split_ratio.setToolTip("스플릿 비교 화면의 분할 기준선 위치를 정밀 조절합니다.")
+        
+        self.point_editor.btn_undo.setToolTip("직전에 수행한 점 추가/이동 작업을 한 단계 되돌립니다.")
+        self.point_editor.btn_redo.setToolTip("되돌렸던 점 추가/이동 작업을 다시 실행합니다.")
+        self.point_editor.btn_up.setToolTip("선택한 매칭 점의 리스트 내 정렬 순서를 위로 올려 매칭 쌍의 번호 순서를 바꿉니다.")
+        self.point_editor.btn_down.setToolTip("선택한 매칭 점의 리스트 내 정렬 순서를 아래로 내려 매칭 쌍의 번호 순서를 바꿉니다.")
 
     def _apply_theme(self) -> None:
         p = PALETTE
@@ -768,13 +796,17 @@ QScrollBar::add-line:vertical, QScrollBar::sub-line:vertical {{
     height: 0px;
 }}
 
-/* ── Message boxes ────────────────────────────────── */
-QMessageBox {{
-    background: {p["secondary"]};
-    color: {p["text"]};
-}}
 QMessageBox QPushButton {{
     min-width: 80px;
+}}
+
+QToolTip {{
+    background-color: {p["secondary"]};
+    border: 1px solid rgba(34, 211, 238, 0.4);
+    border-radius: 8px;
+    color: {p["text"]};
+    padding: 6px 10px;
+    font-size: 9pt;
 }}
 """)
 
