@@ -41,34 +41,45 @@
 
 ---
 
-## 🚀 EXE로 바로 실행하기 (가장 빠른 방법)
+## 📦 데스크톱 단일 실행 파일(.exe) 빌드 및 실행 방법
 
-Python 설치 없이 **단일 실행 파일**로 바로 사용할 수 있습니다.
+이 저장소의 소스코드를 기반으로 사용자의 PC에서 직접 단일 실행 파일(`.exe`)을 만들어 실행하는 방법입니다. Python이 설치되지 않은 다른 PC에서도 이 파일 하나만 있으면 즉시 실행 가능합니다.
 
-### 1️⃣ EXE 파일 준비
-
-- **직접 빌드**: 아래 "빌드 방법" 섹션 참고
-- **배포본 사용**: 관리자 또는 팀에서 배포한 `ArchPhotoLab.exe` 파일을 원하는 폴더에 복사
-
-### 2️⃣ 실행
-
-```
-ArchPhotoLab.exe
+### 1️⃣ 준비 단계 (소스코드 다운로드)
+우측 상단의 **`Code -> Download ZIP`**을 누르거나 아래 명령어로 저장소를 컴퓨터로 내려받습니다:
+```bash
+git clone https://github.com/lzpxilfe/ArchPhotoLab.git
+cd ArchPhotoLab
 ```
 
-더블클릭하거나 터미널에서 실행합니다.  
-**Windows Defender** 경고가 뜨는 경우 → `추가 정보 → 실행` 클릭
+### 2️⃣ 환경 설정 및 필수 도구 설치
+터미널(PowerShell 또는 CMD)을 열고 패키징에 필요한 라이브러리를 설치합니다:
+```bash
+# 가상환경 사용을 권장합니다.
+python -m venv .venv
+# 가상환경 활성화 (Windows)
+.\.venv\Scripts\Activate.ps1
 
-### 3️⃣ 실행 환경 참고사항
+# 의존 라이브러리 및 패키징 빌더 설치
+pip install -r requirements.txt
+pip install pyinstaller
+```
 
-| 항목 | 권장 사양 |
-|------|-----------|
-| OS | Windows 10/11 (64-bit) |
-| RAM | 8GB 이상 (고해상도 사진 처리 시 16GB 권장) |
-| 저장공간 | EXE 파일 약 400MB |
-| 입력 사진 | JPG, PNG, TIFF (원본 해상도 그대로 사용 가능) |
+### 3️⃣ 단일 EXE 파일 빌드
+아래 명령어를 실행하여 단일 실행 파일로 빌드합니다:
+```powershell
+pyinstaller --clean ArchPhotoLab.spec
+```
+> ⚠️ 빌드 과정 중 수많은 WARNING 경고가 뜨는 것은 자연스러운 현상입니다.  
+> 최종적으로 `Building EXE from EXE-00.toc completed successfully.` 라는 문구와 함께 정상 종료되면 빌드에 성공한 것입니다.
 
-> 💡 EXE 실행 시 처음 로딩에 **10~20초** 정도 걸릴 수 있습니다. 검은 화면이 잠깐 뜨는 것은 정상입니다.
+### 4️⃣ 빌드 결과물 실행
+빌드가 끝나면 프로젝트 폴더 내에 `dist/` 폴더가 생성됩니다.  
+그 안에 있는 **`dist/ArchPhotoLab.exe`** 파일을 더블클릭하여 즉시 실행할 수 있습니다.
+
+> 💡 **알아두기**:
+> - 빌드된 `ArchPhotoLab.exe` 파일(약 390MB)만 복사해서 다른 Windows 10/11 64비트 컴퓨터에 전달해도 바로 사용 가능합니다.
+> - 최초 실행 시에는 라이브러리 압축 해제로 인해 약 **10~20초**의 초기 로딩 시간이 필요할 수 있습니다.
 
 ---
 
@@ -203,28 +214,6 @@ pip install -r requirements.txt
 # 실행
 python main.py
 ```
-
----
-
-## 📦 EXE 직접 빌드하기
-
-### 1. PyInstaller 설치
-
-```bash
-pip install pyinstaller
-```
-
-### 2. 빌드 실행
-
-```powershell
-pyinstaller --clean ArchPhotoLab.spec
-```
-
-빌드 완료 후 `dist/ArchPhotoLab.exe` 파일이 생성됩니다.  
-이 파일 하나만 복사하면 Python 없이 어디서든 실행 가능합니다.
-
-> ⚠️ 빌드 시 경고 메시지(WARNING)가 일부 출력되는 것은 정상입니다.  
-> `Building EXE from EXE-00.toc completed successfully.` 메시지가 나오면 성공입니다.
 
 ---
 
