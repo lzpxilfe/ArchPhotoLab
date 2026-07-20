@@ -462,7 +462,8 @@ class ImagePanel(QWidget):
         title_font.setBold(True)
         painter.setFont(title_font)
         painter.setPen(QColor(*IMAGE_PANEL_TEXT_RGB))
-        painter.drawText(IMAGE_PANEL_TITLE_X, UI_TITLE_FONT_SIZE + UI_TITLE_OFFSET_Y, self._title)
+        title_rect = QRect(IMAGE_PANEL_TITLE_X, 0, self.width() - IMAGE_PANEL_TITLE_X * 2, PANEL_TOP_BANNER_HEIGHT)
+        painter.drawText(title_rect, Qt.AlignVCenter | Qt.AlignLeft, self._title)
 
         if self._pixmap is None:
             painter.setPen(QColor(*IMAGE_PANEL_HINT_TEXT_RGB))
