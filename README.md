@@ -2,6 +2,12 @@
 
 ArchPhotoLab is a desktop tool for archaeology-focused photo processing. It aligns one drone photo and one plan image with manually picked control points, previews the result as an overlay, applies a record-friendly flatten correction, and exports PNG outputs from a single workflow.
 
+## 📐 7-Mode Alignment Showcase (정합 방식 비교)
+
+ArchPhotoLab supports 7 different geometric alignment modes to handle oblique drone shots and varying terrain conditions. Below is a 2x2 grid showcase comparison of **Homography (Perspective)**, **TPS (Thin Plate Spline)**, **Polynomial 2nd Order**, and **RBF Multiquadric** alignments using actual drone footage (`DJI_0059.JPG`) and site maps of the **Anyeong-dong Archaeological Remains Site**:
+
+![2x2 Alignment Showcase Grid](alignment_showcase_2x2.png)
+
 ![Python](https://img.shields.io/badge/Python-3.10+-blue?logo=python)
 ![PySide6](https://img.shields.io/badge/PySide6-Desktop%20GUI-41B883?logo=qt)
 ![OpenCV](https://img.shields.io/badge/OpenCV-4.10+-brightgreen?logo=opencv)
@@ -83,9 +89,16 @@ pyinstaller --noconsole --onefile --icon=icon.png --add-data "icon.png;." --name
 
 ### Alignment
 
-- Homography alignment is supported.
-- The current codebase also includes `affine` and `similarity` transform modes internally.
-- Alignment fails clearly when point count is too low or geometry is degenerate.
+- **7 Geometric Modes Supported**:
+  - **Homography (Perspective)**: Corrects perspective distortion (4+ points).
+  - **Affine**: Corrects rotation, scaling, translation, and shearing (3+ points).
+  - **Similarity**: Corrects simple rotation, scaling, and translation (2+ points).
+  - **Polynomial 2nd Order**: Best for drone camera lens curvature and moderate terrain curvature (6+ points, Recommended for oblique drone shots).
+  - **Polynomial 3rd Order**: For complex high-order lens distortion and terrain undulation (10+ points).
+  - **Thin Plate Spline (TPS)**: Non-rigid local warp to align fine details (5+ points).
+  - **RBF Multiquadric**: Non-rigid local warp with smoother boundary extrapolation than TPS (4+ points).
+- Automatic recalculation of alignment on mode change.
+- Real-time quality evaluation and outlier detection.
 - Warped plan preview is shown in the result panel.
 
 ### Quality Feedback
