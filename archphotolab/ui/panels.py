@@ -80,6 +80,7 @@ class ImagePanel(QWidget):
         self._draw_pixmap: Optional[QPixmap] = None
         self._image_width = 1
         self._image_height = 1
+        self._last_image: Optional[np.ndarray] = None
 
         self._points: list[tuple[float, float]] = []
         self._point_errors: list[float] = []
@@ -137,8 +138,13 @@ class ImagePanel(QWidget):
             self._img_width = 1
             self._img_height = 1
             self._opacity = 1.0
+            self._last_image = None
             self.update()
             return
+
+        if self._last_image is image:
+            return
+        self._last_image = image
 
         h, w, c = image.shape
         if c == 4:
@@ -162,6 +168,7 @@ class ImagePanel(QWidget):
         else:
             raise ValueError(MSG_IMAGE_RGB_ONLY)
 
+        is_new_load = (self._pixmap is None)
         self._pixmap = QPixmap.fromImage(qimg)
         self._image_width = int(w)
         self._image_height = int(h)
@@ -170,10 +177,13 @@ class ImagePanel(QWidget):
         self._update_draw_geometry()
         self.update()
 
-        self._fade_anim.stop()
-        self._fade_anim.setStartValue(0.0)
-        self._fade_anim.setEndValue(1.0)
-        self._fade_anim.start()
+        if is_new_load:
+            self._fade_anim.stop()
+            self._fade_anim.setStartValue(0.0)
+            self._fade_anim.setEndValue(1.0)
+            self._fade_anim.start()
+        else:
+            self._opacity = 1.0
 
     def set_points(
         self,
@@ -297,8 +307,9 @@ class ImagePanel(QWidget):
         wy = widget_y - self._img_top
 
         for idx, (x, y) in enumerate(self._points):
-            sx = x * self._display_scale
-            sy = y * self._display_scale
+            # self._points stores raw-resolution coords; convert to widget space via proxy_scale
+            sx = x * self._proxy_scale * self._display_scale
+            sy = y * self._proxy_scale * self._display_scale
             if (sx - wx) ** 2 + (sy - wy) ** 2 <= radius ** 2:
                 return idx
         return None
@@ -431,6 +442,7 @@ class ImagePanel(QWidget):
                 self.pointRemoved.emit(idx)
                 self._dragging_index = None
                 self._selected_index = None
+                self._paired_index = None  # clear paired highlight after deletion
 
     def resizeEvent(self, event) -> None:
         self._update_draw_geometry()

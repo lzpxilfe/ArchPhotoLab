@@ -44,6 +44,7 @@ class PointSnapshot:
     selected_photo_point: Optional[int]
     selected_plan_point: Optional[int]
     alignment_mode: str
+    ransac_enabled: bool
 
 
 def _copy_points(points: List[Point]) -> List[Point]:
@@ -85,6 +86,7 @@ class AppState:
     color_keying_enabled: bool = False
     color_keying_tolerance: int = DEFAULT_COLOR_KEYING_TOLERANCE
     color_keying_target: Optional[Tuple[int, int, int]] = None  # Target RGB color to make transparent
+    ransac_enabled: bool = False
     reprojection_errors: List[float] = field(default_factory=list)
     reprojection_avg: Optional[float] = None
     reprojection_max: Optional[float] = None
@@ -117,6 +119,7 @@ class AppState:
             selected_photo_point=self.selected_photo_point,
             selected_plan_point=self.selected_plan_point,
             alignment_mode=self.alignment_mode,
+            ransac_enabled=self.ransac_enabled,
         )
 
     def __post_init__(self) -> None:
@@ -135,6 +138,7 @@ class AppState:
         self.selected_photo_point = snapshot.selected_photo_point
         self.selected_plan_point = snapshot.selected_plan_point
         self.alignment_mode = snapshot.alignment_mode
+        self.ransac_enabled = snapshot.ransac_enabled
 
     def undo_point_action(self) -> bool:
         if len(self.point_history) <= 1:

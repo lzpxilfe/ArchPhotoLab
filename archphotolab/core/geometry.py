@@ -9,6 +9,9 @@ import numpy as np
 from archphotolab.constants import (
     ALIGNMENT_MODE_AFFINE,
     ALIGNMENT_MODE_HOMOGRAPHY,
+    ALIGNMENT_MODE_POLY2,
+    ALIGNMENT_MODE_POLY3,
+    ALIGNMENT_MODE_RBF_MQ,
     ALIGNMENT_MODE_SIMILARITY,
     ALIGNMENT_MODE_TPS,
     DEFAULT_ALIGNMENT_MODE,
@@ -17,7 +20,11 @@ from archphotolab.constants import (
     GEOMETRY_NUMERIC_EPSILON,
     ALIGNMENT_SCORE_OFFSET,
     MIN_TPS_POINTS,
+    MIN_POLY2_POINTS,
+    MIN_POLY3_POINTS,
     MSG_TPS_REQUIRE_MIN_POINTS_FMT,
+    MSG_POLY2_REQUIRE_MIN_POINTS_FMT,
+    MSG_POLY3_REQUIRE_MIN_POINTS_FMT,
     MSG_TPS_SCIPY_MISSING,
     QUALITY_GRADE_GOOD,
     QUALITY_GRADE_NORMAL,
@@ -167,6 +174,118 @@ def _estimate_tps(
     return remap_x, remap_y, None
 
 
+# ─── Polynomial helpers ──────────────────────────────────────────────────────
+
+# All remap-based modes (TPS, poly2, poly3, rbf_mq) share the same remap pipeline.
+_REMAP_MODES: frozenset[str] = frozenset([
+    ALIGNMENT_MODE_TPS,
+    ALIGNMENT_MODE_POLY2,
+    ALIGNMENT_MODE_POLY3,
+    ALIGNMENT_MODE_RBF_MQ,
+])
+
+
+def _poly_design_matrix(pts: np.ndarray, degree: int) -> np.ndarray:
+    """Build polynomial design matrix for points shaped (N, 2)."""
+    x, y = pts[:, 0], pts[:, 1]
+    if degree == 2:
+        return np.column_stack([
+            np.ones_like(x), x, y,
+            x ** 2, x * y, y ** 2,
+        ])
+    if degree == 3:
+        return np.column_stack([
+            np.ones_like(x), x, y,
+            x ** 2, x * y, y ** 2,
+            x ** 3, x ** 2 * y, x * y ** 2, y ** 3,
+        ])
+    raise ValueError(f"Unsupported polynomial degree: {degree}")
+
+
+def _estimate_poly(
+    src_points: Sequence[Tuple[float, float]],
+    dst_points: Sequence[Tuple[float, float]],
+    photo_shape: Tuple[int, ...],
+    degree: int,
+) -> Tuple[Optional[np.ndarray], Optional[np.ndarray], Optional[str]]:
+    """Polynomial warp via least-squares (inverse mapping for cv2.remap).
+
+    Fits photo-space -> plan-space so that cv2.remap can pull plan pixels
+    into photo-space (pull-based remap).
+    Returns (remap_x, remap_y, error_message).
+    """
+    src = np.asarray(src_points, dtype=np.float64)  # plan control points
+    dst = np.asarray(dst_points, dtype=np.float64)  # photo control points
+
+    # Inverse direction: photo (dst) -> plan (src)
+    A = _poly_design_matrix(dst, degree)
+    coeffs_x, _, _, _ = np.linalg.lstsq(A, src[:, 0], rcond=None)
+    coeffs_y, _, _, _ = np.linalg.lstsq(A, src[:, 1], rcond=None)
+
+    h, w = photo_shape[:2]
+    grid_y, grid_x = np.mgrid[0:h, 0:w]
+    query = np.column_stack([
+        grid_x.ravel().astype(np.float64),
+        grid_y.ravel().astype(np.float64),
+    ])
+    A_full = _poly_design_matrix(query, degree)
+    remap_x = (A_full @ coeffs_x).reshape(h, w).astype(np.float32)
+    remap_y = (A_full @ coeffs_y).reshape(h, w).astype(np.float32)
+    return remap_x, remap_y, None
+
+
+def _poly_reprojection_errors(
+    src_points: Sequence[Tuple[float, float]],
+    dst_points: Sequence[Tuple[float, float]],
+    degree: int,
+) -> List[float]:
+    """Photo-space reprojection errors for polynomial model (forward direction)."""
+    src = np.asarray(src_points, dtype=np.float64)  # plan
+    dst = np.asarray(dst_points, dtype=np.float64)  # photo
+
+    # Forward direction: plan (src) -> photo (dst)
+    A = _poly_design_matrix(src, degree)
+    coeffs_x, _, _, _ = np.linalg.lstsq(A, dst[:, 0], rcond=None)
+    coeffs_y, _, _, _ = np.linalg.lstsq(A, dst[:, 1], rcond=None)
+    predicted = np.column_stack([A @ coeffs_x, A @ coeffs_y])
+    errors = np.linalg.norm(predicted - dst, axis=1)
+    return [float(e) for e in errors]
+
+
+def _estimate_rbf_mq(
+    src_points: Sequence[Tuple[float, float]],
+    dst_points: Sequence[Tuple[float, float]],
+    photo_shape: Tuple[int, ...],
+) -> Tuple[Optional[np.ndarray], Optional[np.ndarray], Optional[str]]:
+    """RBF Multiquadric warp (Hardy 1971). Smoother boundary extrapolation than TPS."""
+    try:
+        from scipy.interpolate import RBFInterpolator
+    except ImportError:
+        return None, None, MSG_TPS_SCIPY_MISSING
+
+    src = np.asarray(src_points, dtype=np.float64)  # plan
+    dst = np.asarray(dst_points, dtype=np.float64)  # photo
+
+    # Epsilon ≈ 30% of mean nearest-neighbour distance in photo space
+    dists = np.linalg.norm(dst[None, :, :] - dst[:, None, :], axis=-1)
+    np.fill_diagonal(dists, np.inf)
+    epsilon = float(np.mean(np.min(dists, axis=1))) * 0.3 + 1e-6
+
+    rbf_x = RBFInterpolator(dst, src[:, 0], kernel="multiquadric", smoothing=0.0, epsilon=epsilon)
+    rbf_y = RBFInterpolator(dst, src[:, 1], kernel="multiquadric", smoothing=0.0, epsilon=epsilon)
+
+    h, w = photo_shape[:2]
+    grid_y, grid_x = np.mgrid[0:h, 0:w]
+    query = np.column_stack([
+        grid_x.ravel().astype(np.float64),
+        grid_y.ravel().astype(np.float64),
+    ])
+    remap_x = rbf_x(query).reshape(h, w).astype(np.float32)
+    remap_y = rbf_y(query).reshape(h, w).astype(np.float32)
+    return remap_x, remap_y, None
+
+
+
 def _estimate_affine(src: np.ndarray, dst: np.ndarray, cfg: AlignmentConfig) -> Tuple[Optional[np.ndarray], Optional[np.ndarray]]:
     if cfg.ransac:
         matrix, mask = cv2.estimateAffine2D(
@@ -285,8 +404,12 @@ def estimate_transform(
     photo_points: Sequence[Tuple[float, float]],
     plan_points: Sequence[Tuple[float, float]],
     config: AlignmentConfig | None = None,
+    photo_shape: Optional[Tuple[int, ...]] = None,
 ) -> AlignmentResult:
-    """Estimate transformation from plan points to photo points."""
+    """Estimate transformation from plan points to photo points.
+
+    photo_shape: optional (H, W[, C]) to pre-compute TPS remap maps in one shot.
+    """
     cfg = config or AlignmentConfig()
     use_count, src, dst = _validate_point_pairs(photo_points, plan_points)
 
@@ -318,17 +441,71 @@ def estimate_transform(
             )
         photo_pts = list(photo_points[:use_count])
         plan_pts = list(plan_points[:use_count])
-        # Use a placeholder photo_shape — actual remap computed during warp
+        actual_shape = photo_shape if photo_shape is not None else (1, 1)
         remap_x, remap_y, tps_err = _estimate_tps(
             src_points=plan_pts,
             dst_points=photo_pts,
-            photo_shape=(1, 1),  # placeholder; real shape given at warp time
+            photo_shape=actual_shape,
         )
         if tps_err is not None:
             return AlignmentResult.failed(mode=cfg.mode, error_message=tps_err, used_point_count=use_count)
-        # Store control points as sentinel matrix; real warp done in warp_plan_to_photo
-        sentinel = np.array(TRANSFORM_MATRIX_SHAPE_TPS, dtype=np.float32).reshape(1, 1)
-        errors = _tps_reprojection_errors(photo_pts, plan_pts)
+        errors = _tps_reprojection_errors(photo_pts, plan_pts)   # exact interp → all 0
+        _mode_remap_maps = (remap_x, remap_y) if photo_shape is not None else None
+
+    elif cfg.mode == ALIGNMENT_MODE_POLY2:
+        if use_count < MIN_POLY2_POINTS:
+            return AlignmentResult.failed(
+                mode=cfg.mode,
+                error_message=MSG_POLY2_REQUIRE_MIN_POINTS_FMT.format(min_points=MIN_POLY2_POINTS),
+                used_point_count=use_count,
+            )
+        photo_pts = list(photo_points[:use_count])
+        plan_pts = list(plan_points[:use_count])
+        actual_shape = photo_shape if photo_shape is not None else (1, 1)
+        remap_x, remap_y, poly_err = _estimate_poly(
+            src_points=plan_pts, dst_points=photo_pts,
+            photo_shape=actual_shape, degree=2,
+        )
+        if poly_err is not None:
+            return AlignmentResult.failed(mode=cfg.mode, error_message=poly_err, used_point_count=use_count)
+        errors = _poly_reprojection_errors(plan_pts, photo_pts, degree=2)
+        _mode_remap_maps = (remap_x, remap_y) if photo_shape is not None else None
+
+    elif cfg.mode == ALIGNMENT_MODE_POLY3:
+        if use_count < MIN_POLY3_POINTS:
+            return AlignmentResult.failed(
+                mode=cfg.mode,
+                error_message=MSG_POLY3_REQUIRE_MIN_POINTS_FMT.format(min_points=MIN_POLY3_POINTS),
+                used_point_count=use_count,
+            )
+        photo_pts = list(photo_points[:use_count])
+        plan_pts = list(plan_points[:use_count])
+        actual_shape = photo_shape if photo_shape is not None else (1, 1)
+        remap_x, remap_y, poly_err = _estimate_poly(
+            src_points=plan_pts, dst_points=photo_pts,
+            photo_shape=actual_shape, degree=3,
+        )
+        if poly_err is not None:
+            return AlignmentResult.failed(mode=cfg.mode, error_message=poly_err, used_point_count=use_count)
+        errors = _poly_reprojection_errors(plan_pts, photo_pts, degree=3)
+        _mode_remap_maps = (remap_x, remap_y) if photo_shape is not None else None
+
+    elif cfg.mode == ALIGNMENT_MODE_RBF_MQ:
+        photo_pts = list(photo_points[:use_count])
+        plan_pts = list(plan_points[:use_count])
+        actual_shape = photo_shape if photo_shape is not None else (1, 1)
+        remap_x, remap_y, rbf_err = _estimate_rbf_mq(
+            src_points=plan_pts, dst_points=photo_pts,
+            photo_shape=actual_shape,
+        )
+        if rbf_err is not None:
+            return AlignmentResult.failed(mode=cfg.mode, error_message=rbf_err, used_point_count=use_count)
+        errors = _tps_reprojection_errors(photo_pts, plan_pts)   # exact interp → all 0
+        _mode_remap_maps = (remap_x, remap_y) if photo_shape is not None else None
+
+    # ── Remap-based modes (TPS, poly2, poly3, rbf_mq) ─────────────────────────
+    if cfg.mode in _REMAP_MODES:
+        sentinel = np.zeros((1, 1), dtype=np.float32)
         profile = _build_quality_profile(errors, None)
         bad_threshold = max(_safe_percentile_threshold(errors), _mad_threshold(errors), ERROR_GRADE_WARNING)
         outliers = [idx for idx, v in enumerate(errors) if v > bad_threshold]
@@ -343,14 +520,10 @@ def estimate_transform(
             quality_profile=profile,
             mode=cfg.mode,
             error_message=None,
-            tps_maps=None,  # computed lazily at warp time
-        )
-    else:
-        return AlignmentResult.failed(
-            mode=cfg.mode,
-            error_message=MSG_ALIGNMENT_MODE_UNSUPPORTED,
+            tps_maps=_mode_remap_maps,
         )
 
+    # ── Matrix-based modes (homography, affine, similarity) ───────────────────
     if matrix is None:
         return AlignmentResult.failed(
             mode=cfg.mode,
@@ -401,6 +574,7 @@ def warp_plan_to_photo(
     mode: str = DEFAULT_ALIGNMENT_MODE,
     photo_points: Optional[Sequence[Tuple[float, float]]] = None,
     plan_points: Optional[Sequence[Tuple[float, float]]] = None,
+    cached_tps_maps: Optional[Tuple[np.ndarray, np.ndarray]] = None,
 ) -> np.ndarray:
     """Warp plan image into photo coordinate space."""
     height, width = photo_shape[:2]
@@ -408,21 +582,30 @@ def warp_plan_to_photo(
     if transform_matrix is None:
         raise ValueError(MSG_TRANSFORM_MATRIX_MISSING)
 
-    if mode == ALIGNMENT_MODE_TPS:
-        # TPS: compute remap maps fresh with the actual photo size
-        if photo_points is None or plan_points is None:
-            raise ValueError(MSG_TRANSFORM_MATRIX_MISSING)
-        remap_x, remap_y, tps_err = _estimate_tps(
-            src_points=list(plan_points),
-            dst_points=list(photo_points),
-            photo_shape=photo_shape,
-        )
-        if tps_err is not None:
-            raise ValueError(tps_err)
+    # ── Remap-based modes: TPS, poly2, poly3, rbf_mq ─────────────────────────
+    if mode in _REMAP_MODES:
+        if cached_tps_maps is not None:
+            remap_x, remap_y = cached_tps_maps
+        else:
+            # Fallback: recompute from control points
+            if photo_points is None or plan_points is None:
+                raise ValueError(MSG_TRANSFORM_MATRIX_MISSING)
+            if mode == ALIGNMENT_MODE_TPS:
+                remap_x, remap_y, err = _estimate_tps(
+                    list(plan_points), list(photo_points), photo_shape)
+            elif mode == ALIGNMENT_MODE_POLY2:
+                remap_x, remap_y, err = _estimate_poly(
+                    list(plan_points), list(photo_points), photo_shape, degree=2)
+            elif mode == ALIGNMENT_MODE_POLY3:
+                remap_x, remap_y, err = _estimate_poly(
+                    list(plan_points), list(photo_points), photo_shape, degree=3)
+            else:  # RBF_MQ
+                remap_x, remap_y, err = _estimate_rbf_mq(
+                    list(plan_points), list(photo_points), photo_shape)
+            if err is not None:
+                raise ValueError(err)
         return cv2.remap(
-            plan_image,
-            remap_x,
-            remap_y,
+            plan_image, remap_x, remap_y,
             interpolation=cv2.INTER_LINEAR,
             borderMode=cv2.BORDER_CONSTANT,
             borderValue=(0, 0, 0),
@@ -458,6 +641,7 @@ def warp_validity_mask(
     mode: str = DEFAULT_ALIGNMENT_MODE,
     photo_points: Optional[Sequence[Tuple[float, float]]] = None,
     plan_points: Optional[Sequence[Tuple[float, float]]] = None,
+    cached_tps_maps: Optional[Tuple[np.ndarray, np.ndarray]] = None,
 ) -> np.ndarray:
     """Return a grayscale mask (uint8) in photo coordinate space.
 
@@ -465,26 +649,33 @@ def warp_validity_mask(
     Pixels that are outside (border fill) = 0.
     Used by multiply blend to avoid darkening areas outside the plan.
     """
-    # Create a solid white single-channel mask the same size as the plan
     h_p, w_p = plan_shape[:2]
     mask_src = np.full((h_p, w_p), 255, dtype=np.uint8)
-
     height, width = photo_shape[:2]
 
-    if mode == ALIGNMENT_MODE_TPS:
-        if photo_points is None or plan_points is None:
-            return np.full((height, width), 255, dtype=np.uint8)
-        remap_x, remap_y, tps_err = _estimate_tps(
-            src_points=list(plan_points),
-            dst_points=list(photo_points),
-            photo_shape=photo_shape,
-        )
-        if tps_err is not None:
-            return np.full((height, width), 255, dtype=np.uint8)
+    # ── Remap-based modes: TPS, poly2, poly3, rbf_mq ─────────────────────────
+    if mode in _REMAP_MODES:
+        if cached_tps_maps is not None:
+            remap_x, remap_y = cached_tps_maps
+        else:
+            if photo_points is None or plan_points is None:
+                return np.full((height, width), 255, dtype=np.uint8)
+            if mode == ALIGNMENT_MODE_TPS:
+                remap_x, remap_y, err = _estimate_tps(
+                    list(plan_points), list(photo_points), photo_shape)
+            elif mode == ALIGNMENT_MODE_POLY2:
+                remap_x, remap_y, err = _estimate_poly(
+                    list(plan_points), list(photo_points), photo_shape, degree=2)
+            elif mode == ALIGNMENT_MODE_POLY3:
+                remap_x, remap_y, err = _estimate_poly(
+                    list(plan_points), list(photo_points), photo_shape, degree=3)
+            else:  # RBF_MQ
+                remap_x, remap_y, err = _estimate_rbf_mq(
+                    list(plan_points), list(photo_points), photo_shape)
+            if err is not None:
+                return np.full((height, width), 255, dtype=np.uint8)
         return cv2.remap(
-            mask_src,
-            remap_x,
-            remap_y,
+            mask_src, remap_x, remap_y,
             interpolation=cv2.INTER_NEAREST,
             borderMode=cv2.BORDER_CONSTANT,
             borderValue=0,
@@ -520,22 +711,8 @@ def _tps_reprojection_errors(
     photo_points: Sequence[Tuple[float, float]],
     plan_points: Sequence[Tuple[float, float]],
 ) -> List[float]:
-    """Placeholder reprojection error for TPS: uses leave-one-out Euclidean distance."""
-    if len(photo_points) < 2:
-        return [0.0] * len(photo_points)
-    errors = []
-    for i in range(len(photo_points)):
-        other_photo = [p for j, p in enumerate(photo_points) if j != i]
-        other_plan = [p for j, p in enumerate(plan_points) if j != i]
-        px, py = photo_points[i]
-        pl_x, pl_y = plan_points[i]
-        # Simple nearest-neighbour residual estimate
-        dists = [
-            ((px - op[0])**2 + (py - op[1])**2)**0.5
-            for op in other_photo
-        ]
-        errors.append(min(dists) if dists else 0.0)
-    return errors
+    """TPS reprojection error is mathematically 0.0 at all control points."""
+    return [0.0] * len(photo_points)
 
 
 def compute_reprojection_errors(

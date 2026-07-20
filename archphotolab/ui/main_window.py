@@ -4,8 +4,8 @@ from pathlib import Path
 from typing import Optional
 
 import numpy as np
-from PySide6.QtCore import Qt
-from PySide6.QtGui import QColor, QFont
+from PySide6.QtCore import Qt, QThread, Signal, QTimer, QDateTime
+from PySide6.QtGui import QColor, QFont, QIcon, QPixmap
 from PySide6.QtWidgets import (
     QCheckBox,
     QComboBox,
@@ -16,9 +16,12 @@ from PySide6.QtWidgets import (
     QMessageBox,
     QPushButton,
     QSlider,
+    QTextEdit,
     QVBoxLayout,
     QWidget,
     QHBoxLayout,
+    QProgressDialog,
+    QApplication,
 )
 
 from archphotolab.constants import (
@@ -26,6 +29,9 @@ from archphotolab.constants import (
     ALIGNMENT_MODE_AFFINE,
     ALIGNMENT_MODE_HOMOGRAPHY,
     ALIGNMENT_MODE_LABELS,
+    ALIGNMENT_MODE_POLY2,
+    ALIGNMENT_MODE_POLY3,
+    ALIGNMENT_MODE_RBF_MQ,
     ALIGNMENT_MODE_SIMILARITY,
     ALIGNMENT_MODE_TPS,
     ALPHA_PERCENT_SCALE,
@@ -34,6 +40,7 @@ from archphotolab.constants import (
     BLEND_MODE_MULTIPLY,
     BLEND_MODE_NORMAL,
     LABEL_BLEND_MODE,
+    LABEL_ALIGNMENT_MODE,
     BUTTON_BORDER_RADIUS,
     BUTTON_FONT_WEIGHT,
     BUTTON_PADDING_X,
@@ -103,6 +110,9 @@ from archphotolab.constants import (
     LABEL_STATUS_PANEL,
     LABEL_VIEW_MODE,
     MIN_ALIGNMENT_POINTS,
+    MIN_TPS_POINTS,
+    MIN_POLY2_POINTS,
+    MIN_POLY3_POINTS,
     MIN_PANEL_SIZE,
     OVERLAY_ALPHA_MAX,
     OVERLAY_ALPHA_MIN,
@@ -243,14 +253,22 @@ from archphotolab.constants import (
     LABEL_ENABLE_COLOR_KEYING,
     LABEL_COLOR_KEYING_TOLERANCE,
     MAX_COLOR_KEYING_TOLERANCE,
+    LABEL_ENABLE_RANSAC,
+    TOOLTIP_ENABLE_RANSAC,
 )
 from archphotolab.core.export import (
     export_paths,
     now_timestamp,
     save_png,
 )
-from archphotolab.core.geometry import warp_plan_to_photo
+from archphotolab.core.geometry import (
+    estimate_transform,
+    warp_plan_to_photo,
+    warp_validity_mask,
+    AlignmentConfig,
+)
 from archphotolab.core.imagery import (
+    apply_color_keying,
     blend_multiply,
     blend_overlay,
     create_proxy_image,
@@ -274,6 +292,157 @@ from archphotolab.ui.status_panel import StatusPanel
 from archphotolab.ui.workflow_controller import WorkflowController
 
 
+class AlignmentWorker(QThread):
+    """Background thread for alignment computation to keep UI responsive."""
+    finished = Signal(bool, object, object)  # success, AlignmentResult, error_str
+    log_message = Signal(str)               # diagnostic log line
+
+    def __init__(self, controller, excluded_indices=None, parent=None):
+        super().__init__(parent)
+        self.controller = controller
+        self.excluded_indices = excluded_indices
+
+    def run(self) -> None:
+        import time
+        t0 = time.perf_counter()
+        try:
+            if self.excluded_indices is not None:
+                self.log_message.emit(f"[정합] 제외 점: {sorted(self.excluded_indices)} → 계산 시작")
+                success, result, error = self.controller.run_alignment(
+                    excluded_indices=self.excluded_indices
+                )
+            else:
+                self.log_message.emit("[정합] 계산 시작...")
+                success, result, error = self.controller.run_alignment()
+
+            elapsed = time.perf_counter() - t0
+            mode = getattr(result, "mode", "?")
+            n_pts = getattr(result, "used_point_count", 0)
+            if success:
+                q = result.quality_profile
+                avg = f"{q.average_error:.2f}" if q.average_error is not None else "-"
+                med = f"{q.median_error:.2f}" if q.median_error is not None else "-"
+                mx  = f"{q.max_error:.2f}"  if q.max_error  is not None else "-"
+                grade = getattr(q, "grade", "?")
+                outliers = getattr(result, "outlier_indices", [])
+                self.log_message.emit(
+                    f"[정합 완료] 방식={mode}  점={n_pts}쌍  "
+                    f"평균오차={avg}px  중앙={med}px  최대={mx}px  "
+                    f"등급={grade}  이상점={outliers}  소요={elapsed:.2f}s"
+                )
+                if outliers:
+                    self.log_message.emit(
+                        f"  ⚠ 이상점 의심: index {outliers} — 해당 점을 선택 후 '제외정합' 시도 권장"
+                    )
+            else:
+                self.log_message.emit(f"[정합 실패] {error}  소요={elapsed:.2f}s")
+            self.finished.emit(success, result, error)
+        except Exception as exc:
+            elapsed = time.perf_counter() - t0
+            self.log_message.emit(f"[정합 오류] {exc}  소요={elapsed:.2f}s")
+            self.finished.emit(False, None, str(exc))
+
+
+class ExportWorker(QThread):
+    """Background thread for high-resolution PNG export."""
+    finished = Signal(bool, list, list)  # success, saved_messages, missing_messages
+    error = Signal(str)
+
+    def __init__(self, params: dict, parent=None) -> None:
+        super().__init__(parent)
+        self.params = params
+
+    def run(self) -> None:
+        try:
+            output_dir = self.params["output_dir"]
+            timestamp = self.params["timestamp"]
+            overlay_path, flat_path, warped_path = export_paths(output_dir, timestamp)
+
+            saved = []
+            missing = []
+
+            # 1. Flat photo generation in high-res original size
+            photo_raw = self.params["photo_image_raw"]
+            if photo_raw is None:
+                photo_raw = self.params["photo_image"]
+
+            flat_image = None
+            if self.params["show_flat_photo"]:
+                flat_image = flatten_illumination(
+                    photo_raw,
+                    self.params["flatten_preset"],
+                    self.params["flatten_intensity"]
+                )
+            if flat_image is None:
+                flat_image = photo_raw
+
+            saved_flat_path = save_png(flat_path, flat_image)
+            saved.append(MSG_EXPORT_SAVED_FLAT_FMT.format(filename=Path(saved_flat_path).name))
+
+            # 2. Warp plan and compose overlay in high-res original size
+            warped_plan_raw = None
+            overlay_raw = None
+            
+            photo_pts = self.params["photo_points"]
+            plan_pts = self.params["plan_points"]
+            plan_raw = self.params["plan_image_raw"]
+
+            if len(photo_pts) >= MIN_ALIGNMENT_POINTS:
+                # Estimate high-res transform matrix using original coordinates points
+                config = AlignmentConfig(mode=self.params["alignment_mode"], ransac=self.params["ransac_enabled"])
+                res = estimate_transform(photo_pts, plan_pts, config=config)
+                
+                if res.matrix is not None and plan_raw is not None:
+                    # Apply color keying to raw plan if enabled
+                    plan_raw_src = plan_raw
+                    if self.params["color_keying_enabled"]:
+                        plan_raw_src = apply_color_keying(
+                            plan_raw_src,
+                            self.params["color_keying_target"],
+                            self.params["color_keying_tolerance"]
+                        )
+                        
+                    # Warp high-res plan
+                    warped_plan_raw = warp_plan_to_photo(
+                        plan_raw_src,
+                        res.matrix,
+                        photo_raw.shape,
+                        mode=self.params["alignment_mode"],
+                        photo_points=photo_pts,
+                        plan_points=plan_pts,
+                    )
+                    
+                    # Compute high-res validity mask
+                    warp_mask_raw = warp_validity_mask(
+                        plan_shape=plan_raw.shape,
+                        transform_matrix=res.matrix,
+                        photo_shape=photo_raw.shape,
+                        mode=self.params["alignment_mode"],
+                        photo_points=photo_pts,
+                        plan_points=plan_pts,
+                    )
+                    
+                    # Compose high-res overlay
+                    base_raw = flat_image if self.params["show_flat_photo"] else photo_raw
+                    if self.params["blend_mode"] == BLEND_MODE_MULTIPLY:
+                        overlay_raw = blend_multiply(base_raw, warped_plan_raw, self.params["overlay_alpha"], validity_mask=warp_mask_raw)
+                    else:
+                        overlay_raw = blend_overlay(base_raw, warped_plan_raw, self.params["overlay_alpha"])
+            
+            if warped_plan_raw is not None:
+                saved_warped_path = save_png(warped_path, warped_plan_raw)
+                saved.append(MSG_EXPORT_SAVED_WARPED_FMT.format(filename=Path(saved_warped_path).name))
+                saved_overlay_path = save_png(overlay_path, overlay_raw)
+                saved.append(MSG_EXPORT_SAVED_OVERLAY_FMT.format(filename=Path(saved_overlay_path).name))
+            else:
+                missing.append(MSG_EXPORT_MISSING_OVERLAY)
+                missing.append(MSG_EXPORT_MISSING_PLAN)
+
+            self.finished.emit(True, saved, missing)
+        except Exception as exc:
+            self.finished.emit(False, [], [str(exc)])
+
+
 class MainWindow(QMainWindow):
     def __init__(self) -> None:
         super().__init__()
@@ -284,11 +453,63 @@ class MainWindow(QMainWindow):
         self.last_dir = str(Path.home())
         self._status_message = ""
         self._point_dragging_side: Optional[str] = None
+        self._alignment_worker: Optional[AlignmentWorker] = None
+        self._spinner_frame: int = 0
+        self._spinner_timer = QTimer(self)
+        self._spinner_timer.setInterval(120)
+        self._spinner_timer.timeout.connect(self._tick_spinner)
 
         self._build_ui()
         self._apply_theme()
+        self._apply_button_icons()
         self._set_intro_text(WORKFLOW_INTRO_TEXT)
         self._refresh_ui()
+
+    # ──────────────────────────────────────────────
+    # Icon helpers
+    # ──────────────────────────────────────────────
+    @staticmethod
+    def _load_icon(name: str) -> QIcon:
+        """Load an 8-bit PNG icon from the assets/icons directory.
+
+        Falls back gracefully to an empty icon if the file is missing.
+        """
+        import sys, os
+        # Support both frozen (PyInstaller) and development environments
+        if getattr(sys, "frozen", False):
+            base = Path(sys._MEIPASS)
+        else:
+            base = Path(__file__).parent.parent.parent
+        icon_path = base / "archphotolab" / "assets" / "icons" / f"{name}.png"
+        if icon_path.exists():
+            return QIcon(str(icon_path))
+        return QIcon()
+
+    def _apply_button_icons(self) -> None:
+        """Assign 8-bit pixel-art icons to every toolbar button."""
+        icon_size_px = 18
+        from PySide6.QtCore import QSize
+        pairs = [
+            (self.btn_open_photo,    "ic_open_photo"),
+            (self.btn_open_plan,     "ic_open_plan"),
+            (self.btn_load_project,  "ic_load_project"),
+            (self.btn_save_project,  "ic_save_project"),
+            (self.btn_point_mode,    "ic_point_mode"),
+            (self.btn_align,         "ic_align"),
+            (self.btn_align_skip,    "ic_align_skip"),
+            (self.btn_flatten,       "ic_flatten"),
+            (self.btn_delete_point,  "ic_delete_point"),
+            (self.btn_export,        "ic_export"),
+            (self.point_editor.btn_undo, "ic_undo"),
+            (self.point_editor.btn_redo, "ic_redo"),
+            (self.point_editor.btn_up,   "ic_up"),
+            (self.point_editor.btn_down, "ic_down"),
+        ]
+        for btn, icon_name in pairs:
+            icon = self._load_icon(icon_name)
+            if not icon.isNull():
+                btn.setIcon(icon)
+                btn.setIconSize(QSize(icon_size_px, icon_size_px))
 
     def _build_ui(self) -> None:
         root = QWidget()
@@ -388,14 +609,22 @@ class MainWindow(QMainWindow):
         self.cmb_view.setMinimumWidth(COMBO_MIN_WIDTH)
         row3.addWidget(self.slider_alpha)
         row3.addWidget(self.lbl_alpha)
-        row3.addWidget(QLabel(ALIGNMENT_MODE_LABELS[ALIGNMENT_MODE_HOMOGRAPHY]))
+        row3.addWidget(QLabel(LABEL_ALIGNMENT_MODE))
         self.cmb_alignment_mode = QComboBox()
         self.cmb_alignment_mode.addItem(ALIGNMENT_MODE_LABELS[ALIGNMENT_MODE_HOMOGRAPHY], ALIGNMENT_MODE_HOMOGRAPHY)
         self.cmb_alignment_mode.addItem(ALIGNMENT_MODE_LABELS[ALIGNMENT_MODE_AFFINE], ALIGNMENT_MODE_AFFINE)
         self.cmb_alignment_mode.addItem(ALIGNMENT_MODE_LABELS[ALIGNMENT_MODE_SIMILARITY], ALIGNMENT_MODE_SIMILARITY)
+        self.cmb_alignment_mode.addItem(ALIGNMENT_MODE_LABELS[ALIGNMENT_MODE_POLY2], ALIGNMENT_MODE_POLY2)
+        self.cmb_alignment_mode.addItem(ALIGNMENT_MODE_LABELS[ALIGNMENT_MODE_POLY3], ALIGNMENT_MODE_POLY3)
         self.cmb_alignment_mode.addItem(ALIGNMENT_MODE_LABELS[ALIGNMENT_MODE_TPS], ALIGNMENT_MODE_TPS)
+        self.cmb_alignment_mode.addItem(ALIGNMENT_MODE_LABELS[ALIGNMENT_MODE_RBF_MQ], ALIGNMENT_MODE_RBF_MQ)
         self.cmb_alignment_mode.currentIndexChanged.connect(self._on_alignment_mode_changed)
         row3.addWidget(self.cmb_alignment_mode)
+
+        self.chk_ransac = QCheckBox(LABEL_ENABLE_RANSAC)
+        self.chk_ransac.setChecked(self.state.ransac_enabled)
+        self.chk_ransac.toggled.connect(self._toggle_ransac)
+        row3.addWidget(self.chk_ransac)
 
         row3.addWidget(QLabel(LABEL_BLEND_MODE))
         self.cmb_blend_mode = QComboBox()
@@ -510,6 +739,32 @@ class MainWindow(QMainWindow):
         root_layout.addLayout(panels, stretch=8)
         root_layout.addWidget(self.status_panel)
 
+        # ── 진단 로그 패널 ────────────────────────────────────
+        log_header = QHBoxLayout()
+        self.btn_toggle_log = QPushButton("📋 진단 로그 ▲")
+        self.btn_toggle_log.setCheckable(True)
+        self.btn_toggle_log.setChecked(False)
+        self.btn_toggle_log.setObjectName("BtnToggleLog")
+        self.btn_toggle_log.toggled.connect(self._toggle_log_panel)
+        self.btn_clear_log = QPushButton("지우기")
+        self.btn_clear_log.setObjectName("BtnClearLog")
+        self.btn_clear_log.clicked.connect(self._clear_log)
+        log_header.addWidget(self.btn_toggle_log)
+        log_header.addWidget(self.btn_clear_log)
+        log_header.addStretch()
+
+        self.log_panel = QTextEdit()
+        self.log_panel.setReadOnly(True)
+        self.log_panel.setObjectName("LogPanel")
+        self.log_panel.setFixedHeight(140)
+        self.log_panel.setVisible(False)
+        self.log_panel.setPlaceholderText(
+            "정합·내보내기 진단 로그가 여기에 표시됩니다. '자동 정합' 버튼을 누르면 계산 과정과 오차 정보를 확인할 수 있습니다."
+        )
+
+        root_layout.addLayout(log_header)
+        root_layout.addWidget(self.log_panel)
+
         self._apply_control_style(
             self.btn_open_photo,
             self.btn_open_plan,
@@ -528,6 +783,7 @@ class MainWindow(QMainWindow):
             self.btn_compare_checkbox(),
             self.chk_color_keying,
             self.slider_color_keying,
+            self.chk_ransac,
         )
         self._setup_tooltips()
 
@@ -540,9 +796,33 @@ class MainWindow(QMainWindow):
             if isinstance(widget, QSlider):
                 widget.setMinimumWidth(SLIDER_MIN_WIDTH)
 
+    def _has_enough_points(self) -> bool:
+        mode = self.state.alignment_mode
+        if mode == ALIGNMENT_MODE_TPS:
+            min_pts = MIN_TPS_POINTS
+        elif mode == ALIGNMENT_MODE_POLY2:
+            min_pts = MIN_POLY2_POINTS
+        elif mode == ALIGNMENT_MODE_POLY3:
+            min_pts = MIN_POLY3_POINTS
+        else:
+            min_pts = MIN_ALIGNMENT_POINTS
+        return (
+            len(self.state.photo_points) >= min_pts
+            and len(self.state.plan_points) >= min_pts
+            and len(self.state.photo_points) == len(self.state.plan_points)
+        )
+
     def _toggle_color_keying(self, checked: bool) -> None:
         self.state.color_keying_enabled = checked
-        if self.state.plan_image is not None and len(self.state.plan_points) >= MIN_ALIGNMENT_POINTS:
+        if self.state.plan_image is not None and self._has_enough_points():
+            self._run_alignment()
+        else:
+            self._refresh_result_view()
+        self._sync_controls()
+
+    def _toggle_ransac(self, checked: bool) -> None:
+        self.state.ransac_enabled = checked
+        if self.state.photo_image is not None and self.state.plan_image is not None and self._has_enough_points():
             self._run_alignment()
         else:
             self._refresh_result_view()
@@ -552,7 +832,7 @@ class MainWindow(QMainWindow):
         self.state.color_keying_tolerance = int(value)
         self.lbl_color_keying_val.setText(f"{value}")
         if self.state.color_keying_enabled:
-            if self.state.plan_image is not None and len(self.state.plan_points) >= MIN_ALIGNMENT_POINTS:
+            if self.state.plan_image is not None and self._has_enough_points():
                 self._run_alignment()
             else:
                 self._refresh_result_view()
@@ -563,7 +843,7 @@ class MainWindow(QMainWindow):
         self.btn_load_project.setToolTip("기존에 저장했던 프로젝트 파일(.json)과 찍어둔 매칭 점들을 불러옵니다.")
         self.btn_save_project.setToolTip("현재 불러온 이미지 경로 및 찍어둔 매칭 점 상태를 프로젝트 파일(.json)로 저장합니다.")
         self.btn_point_mode.setToolTip("드론 사진과 도면 상에 매칭 점을 찍을 수 있는 편집 모드를 켜거나 끕니다.")
-        self.btn_align.setToolTip("최소 3개(TPS는 5개) 이상의 매칭 점 정보를 기준으로 이미지 공간 정합 변환을 실행합니다.")
+        self.btn_align.setToolTip("선택한 정합 방식의 최소 조건에 맞춰 이미지 공간 정합 변환을 실행합니다. (유사: 2점, 선형: 3점, 원근/RBF: 4점, TPS: 5점, 2차: 6점, 3차: 10점)")
         self.btn_align_skip.setToolTip("선택된 특정 점을 임시 제외하고 정합 변환을 계산하여 오차 요인을 시뮬레이션합니다.")
         self.btn_flatten.setToolTip("도면/사진의 불균일한 조명과 그림자를 제거하여 비교하기 편하게 평탄화합니다.")
         self.chk_compare_flat.setToolTip("평탄화가 적용된 드론 사진 결과를 원본 이미지와 겹쳐서 비교합니다.")
@@ -573,7 +853,7 @@ class MainWindow(QMainWindow):
         
         self.cmb_view.setToolTip("결과 뷰 모드 설정:\n- 드론 사진 단독\n- 도면 이미지 단독\n- 사진+도면 오버레이 중첩 뷰")
         self.slider_alpha.setToolTip("사진 위에 겹쳐진 도면 오버레이 이미지의 투명도(불투명도) 비율을 실시간 조절합니다.")
-        self.cmb_alignment_mode.setToolTip("정합 기하 모델 설정:\n- Homography(투영): 원근 왜곡 보정\n- Affine: 회전, 크기, 기울기 보정\n- Similarity: 회전, 크기, 평행이동만 보정\n- TPS: 5쌍 이상의 점으로 구부러짐이나 국소 지형 기복을 자유 변형 보정")
+        self.cmb_alignment_mode.setToolTip("정합 기하 모델 설정:\n- 원근 정합(Homography): 사선 뷰 원근 보정 (4점+)\n- 선형 정합(Affine): 회전, 크기, 전단 왜곡 보정 (3점+)\n- 유사 변환(Similarity): 단순 회전, 크기, 이동 보정 (2점+)\n- 2차 다항식: 카메라 렌즈 곡률 및 완만한 기복 왜곡 보정 (6점+, 권장)\n- 3차 다항식: 고차 렌즈 및 복합 기복 보정 (10점+)\n- TPS 자유 변형: 국소 구부러짐 정밀 자유 보정 (5점+)\n- RBF 곡면 정합: 자연스러운 경계부 처리 자유 보정 (4점+)")
         self.cmb_blend_mode.setToolTip("오버레이 중첩 합성 기술 설정:\n- 일반: 일반 불투명도 기반 투영 중첩\n- 곱하기(Multiply): 도면의 밝은 흰색 배경 영역을 완전히 투명화하고 검은 선만 뚜렷하게 합성")
         self.cmb_flatten_preset.setToolTip("그림자 제거(평탄화)에 적용할 프리셋 유형을 변경합니다.")
         self.slider_flat_intensity.setToolTip("그림자 제거(평탄화) 알고리즘의 보정 강도를 조절합니다.")
@@ -585,6 +865,7 @@ class MainWindow(QMainWindow):
         self.point_editor.btn_down.setToolTip("선택한 매칭 점의 리스트 내 정렬 순서를 아래로 내려 매칭 쌍의 번호 순서를 바꿉니다.")
         self.chk_color_keying.setToolTip("도면의 여백이나 특정 단일 배경색을 찾아내어 투명하게 걷어냅니다.")
         self.slider_color_keying.setToolTip("배경 투명화 시 색상의 일치 오차 범위를 미세 조절합니다.")
+        self.chk_ransac.setToolTip(TOOLTIP_ENABLE_RANSAC)
 
     def _apply_theme(self) -> None:
         p = PALETTE
@@ -605,8 +886,9 @@ QMainWindow, QMainWindow > QWidget {{
     background: {p["secondary"]};
     border: 1px solid rgba(255,255,255,0.06);
     border-radius: {GROUPBOX_BORDER_RADIUS}px;
-    margin-top: {GROUPBOX_MARGIN_TOP}px;
-    padding: {GROUPBOX_PADDING_TOP}px {GROUPBOX_PADDING_RIGHT}px {GROUPBOX_PADDING_BOTTOM}px {GROUPBOX_PADDING_LEFT}px;
+    margin-top: 2px;
+    margin-bottom: 2px;
+    padding: 4px 10px 4px 10px;
 }}
 #IntroCard::title {{
     subcontrol-origin: margin;
@@ -615,7 +897,7 @@ QMainWindow, QMainWindow > QWidget {{
     padding: 0 {GROUPBOX_TITLE_PADDING_X}px;
     color: {p["accent"]};
     font-weight: 600;
-    font-size: {UI_FONT_SIZE - 1}pt;
+    font-size: {UI_FONT_SIZE - 2.0}pt;
     letter-spacing: 0.3px;
 }}
 
@@ -854,8 +1136,104 @@ QToolTip {{
     padding: 6px 10px;
     font-size: 9pt;
 }}
+
+/* ── Log panel ─────────────────────────────────── */
+#LogPanel {{
+    background: rgba(0,0,0,0.35);
+    border: 1px solid rgba(34,211,238,0.15);
+    border-radius: 8px;
+    color: #94A3B8;
+    font-family: "Consolas", "D2Coding", monospace;
+    font-size: 8pt;
+    padding: 4px 8px;
+    selection-background-color: rgba(99,102,241,0.4);
+}}
+#BtnToggleLog, #BtnClearLog {{
+    background: rgba(255,255,255,0.03);
+    border: 1px solid rgba(255,255,255,0.07);
+    border-radius: 6px;
+    color: {p["muted"]};
+    font-size: 8pt;
+    padding: 2px 10px;
+    min-height: 20px;
+}}
+#BtnToggleLog:checked {{
+    color: {p["accent"]};
+    border-color: rgba(34,211,238,0.3);
+}}
+
+/* ── Aligning spinner button ───────────────────── */
+#BtnAligningSpinner {{
+    background: qlineargradient(x1:0,y1:0,x2:1,y2:0,
+        stop:0 #312E81, stop:1 #1E1B4B);
+    border: 1px solid rgba(99,102,241,0.6);
+    border-radius: {BUTTON_BORDER_RADIUS}px;
+    color: #A5B4FC;
+    font-weight: 600;
+}}
 """)
 
+
+    # ──────────────────────────────────────────────
+    # Log panel helpers
+    # ──────────────────────────────────────────────
+    def _toggle_log_panel(self, checked: bool) -> None:
+        self.log_panel.setVisible(checked)
+        self.btn_toggle_log.setText("📋 진단 로그 ▼" if checked else "📋 진단 로그 ▲")
+
+    def _clear_log(self) -> None:
+        self.log_panel.clear()
+
+    def _append_log(self, message: str) -> None:
+        """Append a timestamped line to the diagnostic log and auto-scroll."""
+        ts = QDateTime.currentDateTime().toString("HH:mm:ss")
+        self.log_panel.append(f"[{ts}] {message}")
+        # Auto-scroll to bottom
+        sb = self.log_panel.verticalScrollBar()
+        sb.setValue(sb.maximum())
+
+    # ──────────────────────────────────────────────
+    # Spinner animation helpers
+    # ──────────────────────────────────────────────
+    _SPINNER_CHARS = ["⠋", "⠙", "⠹", "⠸", "⠼", "⠴", "⠦", "⠧", "⠇", "⠏"]
+
+    def _tick_spinner(self) -> None:
+        self._spinner_frame = (self._spinner_frame + 1) % len(self._SPINNER_CHARS)
+        ch = self._SPINNER_CHARS[self._spinner_frame]
+        self.btn_align.setText(f"{ch} 계산 중...")
+
+    def _set_aligning_busy(self, busy: bool) -> None:
+        """Lock/unlock UI during alignment computation."""
+        self.btn_align.setEnabled(not busy)
+        self.btn_align_skip.setEnabled(not busy)
+        self.btn_open_photo.setEnabled(not busy)
+        self.btn_open_plan.setEnabled(not busy)
+        self.btn_load_project.setEnabled(not busy)
+        self.btn_point_mode.setEnabled(not busy)
+        self.btn_export.setEnabled(not busy)
+        if busy:
+            self.btn_align.setObjectName("BtnAligningSpinner")
+            self.btn_align.setText("⠋ 계산 중...")
+            self._spinner_frame = 0
+            self._spinner_timer.start()
+            QApplication.setOverrideCursor(Qt.WaitCursor)
+            # Open log panel automatically so user can see progress
+            if not self.btn_toggle_log.isChecked():
+                self.btn_toggle_log.setChecked(True)
+        else:
+            self._spinner_timer.stop()
+            self.btn_align.setObjectName("BtnPrimaryAlign")
+            self.btn_align.setText(VIEW_BUTTON_ALIGN)
+            # Restore icon if available
+            icon = self._load_icon("ic_align")
+            if not icon.isNull():
+                from PySide6.QtCore import QSize
+                self.btn_align.setIcon(icon)
+                self.btn_align.setIconSize(QSize(18, 18))
+            QApplication.restoreOverrideCursor()
+        # Force stylesheet refresh for objectName change
+        self.btn_align.style().unpolish(self.btn_align)
+        self.btn_align.style().polish(self.btn_align)
 
     def _toggle_intro(self, checked: bool) -> None:
         self.lbl_intro.setVisible(checked)
@@ -898,7 +1276,15 @@ QToolTip {{
             self._set_message(MSG_ALIGNMENT_MODE_CHANGED)
         except ValueError:
             self._set_message(MSG_ALIGNMENT_MODE_UNSUPPORTED, is_error=True)
-            self.cmb_alignment_mode.setCurrentText(ALIGNMENT_MODE_LABELS[DEFAULT_ALIGNMENT_MODE])
+            self._sync_controls()
+            return
+
+        # Recalculate alignment automatically on mode change
+        if self.state.photo_image is not None and self.state.plan_image is not None and self._has_enough_points():
+            self._run_alignment()
+        else:
+            self._refresh_result_view()
+        self._sync_controls()
 
     def _on_split_ratio_changed(self, value: int) -> None:
         ratio = max(SPLIT_VIEW_MIN_RATIO, min(SPLIT_VIEW_MAX_RATIO, value / float(SPLIT_VIEW_PERCENT_SCALE)))
@@ -1179,11 +1565,40 @@ QToolTip {{
         return blend_overlay(base, self.state.warped_plan, self.state.overlay_alpha)
 
     def _run_alignment(self) -> None:
-        success, result, error = self.controller.run_alignment()
-        self._handle_alignment_result(success, result, error)
+        self._start_alignment_worker(excluded_indices=None)
 
     def _run_alignment_excluding_selected_point(self) -> None:
-        success, result, error = self.controller.run_alignment_excluding_selected_pair()
+        pair_idx = self.controller._selected_pair_index()
+        if pair_idx is None:
+            self._set_message(MSG_SELECT_POINT_TO_DELETE, is_error=True)
+            return
+        self._start_alignment_worker(excluded_indices={pair_idx})
+
+    def _start_alignment_worker(self, excluded_indices=None) -> None:
+        """Launch AlignmentWorker in background thread with UI lock + spinner."""
+        if self._alignment_worker is not None and self._alignment_worker.isRunning():
+            # Already computing — ignore extra click
+            return
+
+        n_photo = len(self.state.photo_points)
+        n_plan  = len(self.state.plan_points)
+        mode    = ALIGNMENT_MODE_LABELS.get(self.state.alignment_mode, self.state.alignment_mode)
+        ransac  = "RANSAC ON" if self.state.ransac_enabled else "RANSAC OFF"
+        self._append_log(
+            f"[요청] 정합방식={mode}  사진점={n_photo}개  도면점={n_plan}개  {ransac}"
+        )
+
+        self._set_aligning_busy(True)
+
+        worker = AlignmentWorker(self.controller, excluded_indices=excluded_indices, parent=self)
+        worker.log_message.connect(self._append_log)
+        worker.finished.connect(self._on_alignment_worker_finished)
+        self._alignment_worker = worker
+        worker.start()
+
+    def _on_alignment_worker_finished(self, success: bool, result, error) -> None:
+        self._set_aligning_busy(False)
+        self._alignment_worker = None
         self._handle_alignment_result(success, result, error)
 
     def _handle_alignment_result(
@@ -1200,9 +1615,9 @@ QToolTip {{
             self._refresh_ui()
             return
 
-        if result.matrix is None:
+        if result is None or result.matrix is None:
             self._set_message(
-                MSG_ALIGNMENT_POSTPROC_ERROR_FMT.format(error=result.error_message or MSG_ALIGNMENT_RESULT_INVALID),
+                MSG_ALIGNMENT_POSTPROC_ERROR_FMT.format(error=result.error_message if result else MSG_ALIGNMENT_RESULT_INVALID),
                 is_error=True,
             )
             self._refresh_ui()
@@ -1237,88 +1652,43 @@ QToolTip {{
             return
         self.last_dir = str(Path(output_dir))
 
-        try:
-            overlay_path, flat_path, warped_path = export_paths(output_dir, now_timestamp())
-            saved = []
-            missing = []
+        # Show a progress dialog
+        self._export_progress = QProgressDialog("고화질 이미지 내보내기 정합 계산 중...", None, 0, 0, self)
+        self._export_progress.setWindowTitle("내보내기 진행 중")
+        self._export_progress.setWindowModality(Qt.WindowModal)
+        self._export_progress.show()
 
-            # 1. Flat photo generation in high-res original size
-            photo_raw = self.state.photo_image_raw
-            if photo_raw is None:
-                photo_raw = self.state.photo_image  # Fallback to proxy
-                
-            flat_image = None
-            if self.state.show_flat_photo:
-                from archphotolab.core.imagery import flatten_illumination
-                flat_image = flatten_illumination(
-                    photo_raw,
-                    self.state.flatten_intensity,
-                    self.state.flatten_preset
-                )
-            if flat_image is None:
-                flat_image = photo_raw
+        # Capture app state values safely in a thread-safe dict
+        params = {
+            "output_dir": output_dir,
+            "timestamp": now_timestamp(),
+            "photo_image": self.state.photo_image,
+            "photo_image_raw": self.state.photo_image_raw,
+            "plan_image_raw": self.state.plan_image_raw,
+            "show_flat_photo": self.state.show_flat_photo,
+            "flatten_intensity": self.state.flatten_intensity,
+            "flatten_preset": self.state.flatten_preset,
+            "photo_points": list(self.state.photo_points),
+            "plan_points": list(self.state.plan_points),
+            "alignment_mode": self.state.alignment_mode,
+            "color_keying_enabled": self.state.color_keying_enabled,
+            "color_keying_target": self.state.color_keying_target,
+            "color_keying_tolerance": self.state.color_keying_tolerance,
+            "blend_mode": self.state.blend_mode,
+            "overlay_alpha": self.state.overlay_alpha,
+            "ransac_enabled": self.state.ransac_enabled,
+        }
 
-            saved_flat_path = save_png(flat_path, flat_image)
-            saved.append(MSG_EXPORT_SAVED_FLAT_FMT.format(filename=Path(saved_flat_path).name))
+        self._export_worker = ExportWorker(params, self)
+        self._export_worker.finished.connect(lambda ok, saved, missing: self._on_export_finished(ok, saved, missing, output_dir))
+        self._export_worker.start()
 
-            # 2. Warp plan and compose overlay in high-res original size
-            warped_plan_raw = None
-            overlay_raw = None
-            
-            if len(self.state.photo_points) >= MIN_ALIGNMENT_POINTS:
-                from archphotolab.core.geometry import estimate_transform, warp_plan_to_photo, warp_validity_mask, AlignmentConfig
-                
-                # Estimate high-res transform matrix using original coordinates points
-                config = AlignmentConfig(mode=self.state.alignment_mode)
-                res = estimate_transform(self.state.photo_points, self.state.plan_points, config=config)
-                
-                if res.matrix is not None and self.state.plan_image_raw is not None:
-                    # Apply color keying to raw plan if enabled
-                    plan_raw_src = self.state.plan_image_raw
-                    if self.state.color_keying_enabled:
-                        from archphotolab.core.imagery import apply_color_keying
-                        plan_raw_src = apply_color_keying(
-                            plan_raw_src,
-                            self.state.color_keying_target,
-                            self.state.color_keying_tolerance
-                        )
-                        
-                    # Warp high-res plan
-                    warped_plan_raw = warp_plan_to_photo(
-                        plan_raw_src,
-                        res.matrix,
-                        photo_raw.shape,
-                        mode=self.state.alignment_mode,
-                        photo_points=self.state.photo_points,
-                        plan_points=self.state.plan_points,
-                    )
-                    
-                    # Compute high-res validity mask
-                    warp_mask_raw = warp_validity_mask(
-                        plan_shape=self.state.plan_image_raw.shape,
-                        transform_matrix=res.matrix,
-                        photo_shape=photo_raw.shape,
-                        mode=self.state.alignment_mode,
-                        photo_points=self.state.photo_points,
-                        plan_points=self.state.plan_points,
-                    )
-                    
-                    # Compose high-res overlay
-                    base_raw = flat_image if self.state.show_flat_photo else photo_raw
-                    if self.state.blend_mode == BLEND_MODE_MULTIPLY:
-                        overlay_raw = blend_multiply(base_raw, warped_plan_raw, self.state.overlay_alpha, validity_mask=warp_mask_raw)
-                    else:
-                        overlay_raw = blend_overlay(base_raw, warped_plan_raw, self.state.overlay_alpha)
-            
-            if warped_plan_raw is not None:
-                saved_warped_path = save_png(warped_path, warped_plan_raw)
-                saved.append(MSG_EXPORT_SAVED_WARPED_FMT.format(filename=Path(saved_warped_path).name))
-                saved_overlay_path = save_png(overlay_path, overlay_raw)
-                saved.append(MSG_EXPORT_SAVED_OVERLAY_FMT.format(filename=Path(saved_overlay_path).name))
-            else:
-                missing.append(MSG_EXPORT_MISSING_OVERLAY)
-                missing.append(MSG_EXPORT_MISSING_PLAN)
+    def _on_export_finished(self, success: bool, saved: list, missing: list, output_dir: str) -> None:
+        if hasattr(self, "_export_progress") and self._export_progress is not None:
+            self._export_progress.close()
+            self._export_progress = None
 
+        if success:
             message = "\n".join(saved)
             if missing:
                 message += f"\n\n{MSG_EXPORT_MISSING_PREFIX}{', '.join(missing)}"
@@ -1328,9 +1698,10 @@ QToolTip {{
                 MSG_EXPORT_RESULT_MESSAGE.format(message=message, path=output_dir),
             )
             self._set_message(MSG_EXPORT_SUCCESS_FMT.format(path=output_dir))
-        except Exception as exc:
-            self._set_message(MSG_EXPORT_ERROR_FMT.format(error=exc), is_error=True)
-            QMessageBox.warning(self, DIALOG_TITLE_ERROR, MSG_PNG_SAVE_FAIL_FMT.format(error=exc))
+        else:
+            error_msg = missing[0] if missing else "Unknown error"
+            self._set_message(MSG_EXPORT_ERROR_FMT.format(error=error_msg), is_error=True)
+            QMessageBox.warning(self, DIALOG_TITLE_ERROR, MSG_PNG_SAVE_FAIL_FMT.format(error=error_msg))
 
     def _save_project(self) -> None:
         file_path, _ = QFileDialog.getSaveFileName(
@@ -1467,16 +1838,20 @@ QToolTip {{
         else:
             combo = self.cmb_view
 
-        for i in range(combo.count()):
-            if str(combo.itemData(i)) == value:
-                combo.setCurrentIndex(i)
-                return
-            if combo.itemText(i) == value and is_alignment:
-                combo.setCurrentIndex(i)
-                return
-            if combo.itemText(i) == value and is_flatten:
-                combo.setCurrentIndex(i)
-                return
+        combo.blockSignals(True)
+        try:
+            for i in range(combo.count()):
+                if str(combo.itemData(i)) == value:
+                    combo.setCurrentIndex(i)
+                    return
+                if combo.itemText(i) == value and is_alignment:
+                    combo.setCurrentIndex(i)
+                    return
+                if combo.itemText(i) == value and is_flatten:
+                    combo.setCurrentIndex(i)
+                    return
+        finally:
+            combo.blockSignals(False)
 
     def _view_mode_label(self, mode: str) -> str:
         if mode == VIEW_MODE_PHOTO:
@@ -1497,16 +1872,26 @@ QToolTip {{
     def _sync_controls(self) -> None:
         self.photo_view.set_editable(self.btn_point_mode.isChecked())
         self.plan_view.set_editable(self.btn_point_mode.isChecked())
+        # Determine minimum points required based on alignment mode
+        mode = self.state.alignment_mode
+        if mode == ALIGNMENT_MODE_TPS:
+            _min_pts = MIN_TPS_POINTS
+        elif mode == ALIGNMENT_MODE_POLY2:
+            _min_pts = MIN_POLY2_POINTS
+        elif mode == ALIGNMENT_MODE_POLY3:
+            _min_pts = MIN_POLY3_POINTS
+        else:
+            _min_pts = MIN_ALIGNMENT_POINTS
         self.btn_align.setEnabled(
             self.state.photo_image is not None
             and self.state.plan_image is not None
-            and len(self.state.photo_points) >= MIN_ALIGNMENT_POINTS
-            and len(self.state.plan_points) >= MIN_ALIGNMENT_POINTS
+            and len(self.state.photo_points) >= _min_pts
+            and len(self.state.plan_points) >= _min_pts
             and len(self.state.photo_points) == len(self.state.plan_points)
         )
         self.btn_align_skip.setEnabled(self.btn_align.isEnabled() and self.controller._selected_pair_index() is not None)
         self.btn_align.setToolTip(
-            MSG_ALIGNMENT_TOOLTIP_FMT.format(min_points=MIN_ALIGNMENT_POINTS)
+            MSG_ALIGNMENT_TOOLTIP_FMT.format(min_points=_min_pts)
             if not self.btn_align.isEnabled()
             else MSG_ALIGNMENT_READY_TO_ALIGN_FMT
         )
@@ -1544,6 +1929,9 @@ QToolTip {{
         self.chk_compare_split.setEnabled(self.state.photo_image is not None)
         self.slider_split_ratio.setEnabled(self.state.photo_image is not None and self.state.flattened_photo is not None)
         self.cmb_alignment_mode.setEnabled(self.state.photo_image is not None and self.state.plan_image is not None)
+        self._set_combo_by_value(self.state.alignment_mode, is_alignment=True)
+        self.chk_ransac.setEnabled(self.state.photo_image is not None and self.state.plan_image is not None)
+        self.chk_ransac.setChecked(self.state.ransac_enabled)
         
         # Synchronize color screening UI states
         self.chk_color_keying.setEnabled(self.state.plan_image is not None)
@@ -1688,6 +2076,17 @@ QToolTip {{
             f"{STATUS_POINTS_SEPARATOR}{len(self.state.plan_points)}{STATUS_POINTS_SUFFIX}"
         )
 
+        # Determine minimum points required based on alignment mode
+        mode = self.state.alignment_mode
+        if mode == ALIGNMENT_MODE_TPS:
+            _min_pts = MIN_TPS_POINTS
+        elif mode == ALIGNMENT_MODE_POLY2:
+            _min_pts = MIN_POLY2_POINTS
+        elif mode == ALIGNMENT_MODE_POLY3:
+            _min_pts = MIN_POLY3_POINTS
+        else:
+            _min_pts = MIN_ALIGNMENT_POINTS
+
         if len(self.state.photo_points) != len(self.state.plan_points):
             mismatch = STATUS_MISMATCH_WARNING
             guide = f"{STATUS_GUIDE_PREFIX}{WORKFLOW_STEP_ALIGNMENT_MISMATCH_WARN}"
@@ -1697,8 +2096,8 @@ QToolTip {{
         elif self.state.plan_image is None:
             mismatch = ""
             guide = f"{STATUS_GUIDE_PREFIX}{WORKFLOW_STEP_1_LOAD_PLAN}"
-        elif len(self.state.photo_points) < MIN_ALIGNMENT_POINTS:
-            guide = f"{STATUS_GUIDE_PREFIX}{WORKFLOW_STEP_POINTS.format(min_points=MIN_ALIGNMENT_POINTS)}"
+        elif len(self.state.photo_points) < _min_pts:
+            guide = f"{STATUS_GUIDE_PREFIX}{WORKFLOW_STEP_POINTS.format(min_points=_min_pts)}"
             mismatch = ""
         elif self.state.homography is None:
             guide = f"{STATUS_GUIDE_PREFIX}{WORKFLOW_STEP_ALIGNMENT_READY}"
@@ -1707,7 +2106,7 @@ QToolTip {{
             guide = f"{STATUS_GUIDE_PREFIX}{WORKFLOW_STEP_ALIGNMENT_DONE}"
             mismatch = ""
 
-        if len(self.state.photo_points) < MIN_ALIGNMENT_POINTS and len(self.state.plan_points) < MIN_ALIGNMENT_POINTS:
+        if len(self.state.photo_points) < _min_pts and len(self.state.plan_points) < _min_pts:
             step = f"{STATUS_STEP_PREFIX}{STATUS_STEP_POINTS}"
         elif self.state.homography is None:
             step = f"{STATUS_STEP_PREFIX}{STATUS_STEP_ALIGNMENT}"

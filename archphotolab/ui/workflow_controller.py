@@ -116,33 +116,50 @@ class WorkflowController:
         return photo_points, plan_points
 
     def remove_point(self, side: str, index: int) -> None:
-        points = self.state.photo_points if side == VIEW_MODE_PHOTO else self.state.plan_points
-        if index < 0 or index >= len(points):
+        if index < 0:
+            return
+        
+        # Ensure we don't go out of bounds on either list
+        photo_len = len(self.state.photo_points)
+        plan_len = len(self.state.plan_points)
+        if index >= photo_len and index >= plan_len:
             return
 
         self.state.push_point_history()
-        points.pop(index)
+        
+        # Always remove from BOTH lists at the same index to keep point pairing intact!
+        if index < photo_len:
+            self.state.photo_points.pop(index)
+        if index < plan_len:
+            self.state.plan_points.pop(index)
 
-        if side == VIEW_MODE_PHOTO:
-            self.state.selected_photo_point = None
-        else:
-            self.state.selected_plan_point = None
+        self.state.selected_photo_point = None
+        self.state.selected_plan_point = None
 
         self.state.workflow_stage = WORKFLOW_STAGE_POINTS
         self.state.clear_alignment()
 
     def reorder_point(self, side: str, direction: int) -> None:
-        points = self.state.photo_points if side == VIEW_MODE_PHOTO else self.state.plan_points
         selected = self.state.selected_photo_point if side == VIEW_MODE_PHOTO else self.state.selected_plan_point
-        if selected is None or not (0 <= selected < len(points)):
+        if selected is None:
             return
-
+            
+        photo_len = len(self.state.photo_points)
+        plan_len = len(self.state.plan_points)
         target = selected + direction
-        if target < 0 or target >= len(points):
+        
+        if target < 0 or target >= min(photo_len, plan_len):
             return
 
         self.state.push_point_history()
-        points[selected], points[target] = points[target], points[selected]
+        
+        # Always swap in BOTH lists to maintain matching pairs!
+        if selected < photo_len and target < photo_len:
+            self.state.photo_points[selected], self.state.photo_points[target] = \
+                self.state.photo_points[target], self.state.photo_points[selected]
+        if selected < plan_len and target < plan_len:
+            self.state.plan_points[selected], self.state.plan_points[target] = \
+                self.state.plan_points[target], self.state.plan_points[selected]
 
         if side == VIEW_MODE_PHOTO:
             self.state.selected_photo_point = target
@@ -229,8 +246,11 @@ class WorkflowController:
         else:
             self.state.workflow_stage = WORKFLOW_STAGE_ALIGNMENT
 
-        config = AlignmentConfig(mode=self.state.alignment_mode)
-        result = estimate_transform(photo_points, plan_points, config=config)
+        config = AlignmentConfig(mode=self.state.alignment_mode, ransac=self.state.ransac_enabled)
+        result = estimate_transform(
+            photo_points, plan_points, config=config,
+            photo_shape=self.state.photo_image.shape,
+        )
 
         if result.error_message is not None:
             self.state.clear_alignment()
@@ -268,6 +288,9 @@ class WorkflowController:
                 self.state.color_keying_tolerance
             )
 
+        # Use cached TPS maps (computed once in estimate_transform) to avoid triple scipy call
+        cached_maps = result.tps_maps
+
         self.state.warped_plan = warp_plan_to_photo(
             plan_src,
             self.state.homography,
@@ -275,6 +298,7 @@ class WorkflowController:
             mode=self.state.alignment_mode,
             photo_points=self.state.photo_points,
             plan_points=self.state.plan_points,
+            cached_tps_maps=cached_maps,
         )
         self.state.warp_mask = warp_validity_mask(
             plan_shape=self.state.plan_image.shape,
@@ -283,6 +307,7 @@ class WorkflowController:
             mode=self.state.alignment_mode,
             photo_points=self.state.photo_points,
             plan_points=self.state.plan_points,
+            cached_tps_maps=cached_maps,
         )
 
         return True, result, None

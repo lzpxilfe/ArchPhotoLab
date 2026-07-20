@@ -265,6 +265,7 @@ def create_proxy_image(image: np.ndarray) -> Tuple[np.ndarray, float]:
 def apply_color_keying(image: np.ndarray, target_rgb: Tuple[int, int, int], tolerance: int) -> np.ndarray:
     """Convert white/colored background pixels matching target_rgb within tolerance to transparent.
     
+    Uses CIE L*a*b* color space for perceptual uniformity.
     Returns 4-channel RGBA numpy array.
     """
     if image is None:
@@ -282,13 +283,22 @@ def apply_color_keying(image: np.ndarray, target_rgb: Tuple[int, int, int], tole
         # Default to (0,0) pixel color as target background key if none provided
         target_rgb = tuple(map(int, rgb[0, 0]))
         
-    # Calculate Euclidean distance in color space
-    tr, tg, tb = target_rgb
-    diff = rgb.astype(np.float32) - np.array([tr, tg, tb], dtype=np.float32)
+    # Convert input RGB image to LAB space
+    lab = cv2.cvtColor(rgb, cv2.COLOR_RGB2LAB)
+    
+    # Convert target RGB color to LAB space
+    target_pixel = np.array([[[target_rgb[0], target_rgb[1], target_rgb[2]]]], dtype=np.uint8)
+    target_lab = cv2.cvtColor(target_pixel, cv2.COLOR_RGB2LAB)[0, 0]
+    
+    # Calculate Euclidean distance in LAB color space
+    tr, tg, tb = target_lab
+    diff = lab.astype(np.float32) - np.array([tr, tg, tb], dtype=np.float32)
     dist = np.sqrt(np.sum(diff ** 2, axis=2))
     
-    # Mask out matching pixels (distance <= tolerance)
-    mask = dist <= float(tolerance)
+    # Tolerance scaling factor (since max tolerance is 100 and LAB max distance is ~442.0)
+    # A tolerance value of 100 corresponds to full threshold of 442.0.
+    scale_factor = 442.0 / 100.0
+    mask = dist <= float(tolerance * scale_factor)
     alpha[mask] = 0
     
     # Merge back to RGBA

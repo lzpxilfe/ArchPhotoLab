@@ -10,21 +10,31 @@ PYTHON_LOG_FORMAT: Final[str] = "%(asctime)s [%(levelname)s] %(message)s"
 PROJECT_MIN_COMPATIBLE_VERSION: Final[str] = "0.1.0"
 
 # Alignment modes
-ALIGNMENT_MODE_HOMOGRAPHY: Final[str] = "homography"
-ALIGNMENT_MODE_AFFINE: Final[str] = "affine"
-ALIGNMENT_MODE_SIMILARITY: Final[str] = "similarity"
-ALIGNMENT_MODE_TPS: Final[str] = "tps"
+ALIGNMENT_MODE_HOMOGRAPHY:  Final[str] = "homography"
+ALIGNMENT_MODE_AFFINE:      Final[str] = "affine"
+ALIGNMENT_MODE_SIMILARITY:  Final[str] = "similarity"
+ALIGNMENT_MODE_POLY2:       Final[str] = "poly2"             # 2차 다항식
+ALIGNMENT_MODE_POLY3:       Final[str] = "poly3"             # 3차 다항식
+ALIGNMENT_MODE_TPS:         Final[str] = "tps"               # Thin Plate Spline
+ALIGNMENT_MODE_RBF_MQ:      Final[str] = "rbf_multiquadric"  # RBF Multiquadric
+
 TRANSFORM_MODE_OPTIONS: Final[tuple[str, ...]] = (
     ALIGNMENT_MODE_HOMOGRAPHY,
     ALIGNMENT_MODE_AFFINE,
     ALIGNMENT_MODE_SIMILARITY,
+    ALIGNMENT_MODE_POLY2,
+    ALIGNMENT_MODE_POLY3,
     ALIGNMENT_MODE_TPS,
+    ALIGNMENT_MODE_RBF_MQ,
 )
 ALIGNMENT_MODE_LABELS: Final[dict[str, str]] = {
-    ALIGNMENT_MODE_HOMOGRAPHY: "프로젝트 정합",
-    ALIGNMENT_MODE_AFFINE: "선형 정합",
-    ALIGNMENT_MODE_SIMILARITY: "유사 변환 정합",
-    ALIGNMENT_MODE_TPS: "TPS 자유 변형",
+    ALIGNMENT_MODE_HOMOGRAPHY: "원근 정합 (4점+)",
+    ALIGNMENT_MODE_AFFINE:     "선형 정합 (3점+)",
+    ALIGNMENT_MODE_SIMILARITY: "유사 변환 (2점+)",
+    ALIGNMENT_MODE_POLY2:      "2차 다항식 (6점+)",
+    ALIGNMENT_MODE_POLY3:      "3차 다항식 (10점+)",
+    ALIGNMENT_MODE_TPS:        "TPS 자유 변형 (5점+)",
+    ALIGNMENT_MODE_RBF_MQ:     "RBF 곡면 정합 (4점+)",
 }
 DEFAULT_ALIGNMENT_MODE: Final[str] = ALIGNMENT_MODE_HOMOGRAPHY
 
@@ -37,16 +47,17 @@ BLEND_MODE_LABELS: Final[dict[str, str]] = {
     BLEND_MODE_MULTIPLY: "곱하기 (흰 배경 제거)",
 }
 LABEL_BLEND_MODE: Final[str] = "블렌드"
+LABEL_ALIGNMENT_MODE: Final[str] = "정합 방식"
 
 # Layout
 DEFAULT_WINDOW_SIZE: Final[tuple[int, int]] = (1660, 1020)
 MIN_PANEL_SIZE: Final[tuple[int, int]] = (260, 260)
 PANEL_MIN_SIZE: Final[tuple[int, int]] = MIN_PANEL_SIZE
-ROOT_LAYOUT_MARGIN: Final[int] = 10
-ROOT_LAYOUT_SPACING: Final[int] = 8
-WORKFLOW_SECTION_SPACING: Final[int] = 8
-WORKFLOW_ROW_SPACING: Final[int] = 8
-WORKFLOW_ROW3_SPACING: Final[int] = 10
+ROOT_LAYOUT_MARGIN: Final[int] = 6
+ROOT_LAYOUT_SPACING: Final[int] = 4
+WORKFLOW_SECTION_SPACING: Final[int] = 4
+WORKFLOW_ROW_SPACING: Final[int] = 4
+WORKFLOW_ROW3_SPACING: Final[int] = 6
 PANELS_STRETCH: Final[int] = 9
 
 # UI / typography
@@ -66,9 +77,11 @@ JSON_CHARSET_ENCODING: Final[str] = "utf-8"
 
 # Alignment / geometry
 MIN_ALIGNMENT_POINTS: Final[int] = 4
-MIN_TPS_POINTS: Final[int] = 5
-HOMOGRAPHY_METHOD: Final[int] = 0
-GEOMETRY_DEFAULT_RANSAC_THRESHOLD: Final[float] = 0.0
+MIN_TPS_POINTS:       Final[int] = 5
+MIN_POLY2_POINTS:     Final[int] = 6
+MIN_POLY3_POINTS:     Final[int] = 10
+HOMOGRAPHY_METHOD: Final[int] = 4   # cv2.LMEDS — valid for findHomography, estimateAffine2D, estimateAffinePartial2D
+GEOMETRY_DEFAULT_RANSAC_THRESHOLD: Final[float] = 3.0
 GEOMETRY_NUMERIC_EPSILON: Final[float] = 1e-6
 OVERLAY_ALPHA_DEFAULT: Final[float] = 0.45
 OVERLAY_ALPHA_MIN: Final[int] = 0
@@ -104,8 +117,10 @@ TRANSFORM_MATRIX_SHAPES: Final[tuple[tuple[int, int], ...]] = (
     TRANSFORM_MATRIX_SHAPE_AFFINE,
     TRANSFORM_MATRIX_SHAPE_TPS,
 )
-MSG_TPS_REQUIRE_MIN_POINTS_FMT: Final[str] = "TPS 변형은 {min_points}개 이상의 대응점이 필요합니다."
-MSG_TPS_SCIPY_MISSING: Final[str] = "scipy가 설치되어 있지 않아 TPS를 사용할 수 없습니다. (pip install scipy)"
+MSG_TPS_REQUIRE_MIN_POINTS_FMT:   Final[str] = "TPS 변형은 {min_points}개 이상의 대응점이 필요합니다."
+MSG_POLY2_REQUIRE_MIN_POINTS_FMT: Final[str] = "2차 다항식은 {min_points}개 이상의 대응점이 필요합니다."
+MSG_POLY3_REQUIRE_MIN_POINTS_FMT: Final[str] = "3차 다항식은 {min_points}개 이상의 대응점이 필요합니다."
+MSG_TPS_SCIPY_MISSING: Final[str] = "scipy가 설치되어 있지 않아 해당 정합을 사용할 수 없습니다. (pip install scipy)"
 
 # View mode keys
 VIEW_MODE_PHOTO: Final[str] = "photo"
@@ -540,6 +555,7 @@ class ProjectKeys:
     BLEND_MODE: Final[str] = "blend_mode"
     COLOR_KEYING_ENABLED: Final[str] = "color_keying_enabled"
     COLOR_KEYING_TOLERANCE: Final[str] = "color_keying_tolerance"
+    RANSAC_ENABLED: Final[str] = "ransac_enabled"
 
 
 # Proxy & Color Screening Constants
@@ -548,4 +564,7 @@ DEFAULT_COLOR_KEYING_TOLERANCE: Final[int] = 15
 MAX_COLOR_KEYING_TOLERANCE: Final[int] = 100
 LABEL_ENABLE_COLOR_KEYING: Final[str] = "도면 배경 투명화"
 LABEL_COLOR_KEYING_TOLERANCE: Final[str] = "투명 감도"
+LABEL_ENABLE_RANSAC: Final[str] = "이상점 자동 제거(RANSAC)"
+TOOLTIP_ENABLE_RANSAC: Final[str] = "오차가 큰 잘못된 매칭 점(이상치)을 수학적으로 자동 감지하여 정합 계산에서 제외합니다."
+
 

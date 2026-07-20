@@ -166,6 +166,7 @@ def migrate_project_payload(raw: Dict[str, Any]) -> Tuple[Dict[str, Any], List[s
     payload.setdefault(ProjectKeys.QUALITY_PROFILE, {})
     payload.setdefault(ProjectKeys.QUALITY_GRADE, QUALITY_GRADE_UNKNOWN)
     payload.setdefault(ProjectKeys.FLATTEN_ENABLED, False)
+    payload.setdefault(ProjectKeys.RANSAC_ENABLED, False)
 
     if payload[ProjectKeys.FLATTEN_INTENSITY] is None:
         payload[ProjectKeys.FLATTEN_INTENSITY] = FLATTEN_PRESET_INTENSITY_DEFAULT
@@ -267,6 +268,7 @@ def state_to_dict(state: AppState) -> Dict[str, Any]:
         },
         ProjectKeys.QUALITY_GRADE: state.quality_profile.grade,
         ProjectKeys.BLEND_MODE: state.blend_mode,
+        ProjectKeys.RANSAC_ENABLED: bool(state.ransac_enabled),
     }
 
 
@@ -306,6 +308,7 @@ def apply_project_dict_to_state(data: Dict[str, Any]) -> AppState:
     state.plan_view_pan_x = _coerce_int(payload.get(ProjectKeys.PLAN_VIEW_PAN_X), state.plan_view_pan_x)
     state.plan_view_pan_y = _coerce_int(payload.get(ProjectKeys.PLAN_VIEW_PAN_Y), state.plan_view_pan_y)
     state.workflow_stage = payload.get(ProjectKeys.WORKFLOW_STAGE, "")
+    state.ransac_enabled = bool(payload.get(ProjectKeys.RANSAC_ENABLED, False))
 
     editor_state = payload.get(ProjectKeys.POINT_EDITOR_STATE) if isinstance(payload.get(ProjectKeys.POINT_EDITOR_STATE), dict) else {}
     state.selected_photo_point = editor_state.get("selected_photo_point")
