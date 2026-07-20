@@ -116,11 +116,11 @@ ArchPhotoLab.exe
 |------|-----------|-----------------|
 | 유사 변환 | 스케일·회전만 보정할 때 | 2개 |
 | 선형 정합 | 평탄한 지형, 수직 촬영 | 3개 |
-| 원근 정합 | 사선 촬영, 약간의 원근 왜곡 | 4개 |
-| **TPS 자유 변형** ⭐ | 굴곡 지형, 등고선이 복잡한 경우 | 5개 |
-| **RBF 곡면 정합** ⭐ | TPS보다 경계부가 자연스러운 고품질 정합 | 4개 |
-| 2차 다항식 | 렌즈 왜곡이 있는 사선 드론샷 | 6개 |
-| 3차 다항식 | 복잡한 광학 왜곡, 넓은 지역 | 10개 |
+| 원근 정합 (Homography) | 사선 촬영, 약간의 원근 왜곡 [[1]](#references) | 4개 |
+| **TPS 자유 변형** ⭐ | 굴곡 지형, 등고선이 복잡한 경우 [[2]](#references) | 5개 |
+| **RBF 곡면 정합** ⭐ | TPS보다 경계부가 자연스러운 고품질 정합 [[3]](#references) | 4개 |
+| 2차 다항식 | 렌즈 왜곡이 있는 사선 드론샷 [[4]](#references) | 6개 |
+| 3차 다항식 | 복잡한 광학 왜곡, 넓은 지역 [[4]](#references) | 10개 |
 
 ### 4단계 — 자동 정합 실행
 
@@ -163,10 +163,11 @@ ArchPhotoLab.exe
 
 QGIS 지오레퍼런서 수준의 다양한 변환 방식을 지원합니다:
 
-- **유사·선형·원근 변환**: 빠르고 안정적인 강체 정합
-- **TPS 자유 변형**: 얇은 판 스플라인 기반, 제어점에 완벽히 들어맞는 국소 변형
-- **RBF 곡면 정합**: 멀티쿼드릭 기저함수 기반, 경계부 왜곡 최소화
-- **2차·3차 다항식**: 광각 렌즈 왜곡 및 복잡한 지형 보정
+- **유사·선형·원근 변환**: 빠르고 안정적인 강체 정합. 원근(Homography) 행렬은 SVD 기반 DLT로 추정합니다 [[1]](#references)
+- **TPS 자유 변형**: 얇은 판 스플라인(Thin-Plate Spline) 기반 국소 변형. 제어점에 정확히 들어맞으며 굴곡 지형 보정에 탁월합니다 [[2]](#references)
+- **RBF 곡면 정합**: Hardy(1971) 멀티쿼드릭 기저함수 기반 산개점 보간법. 경계부 외삽이 자연스러운 고품질 정합을 제공합니다 [[3]](#references)
+- **2차·3차 다항식**: 전역 다항식 변환으로 광각 렌즈 왜곡 및 복잡한 지형 보정에 사용합니다 [[4]](#references)
+- **이상점 제거(RANSAC)**: 오염된 대응점 중 합의(consensus) 기반으로 내부점(inlier)만 선택하여 강건한 정합을 보장합니다 [[5]](#references)
 
 ### 🎨 고급 블렌딩
 
@@ -260,6 +261,22 @@ ArchPhotoLab/
 │       ├── workflow_controller.py  # 정합 워크플로우 제어
 │       └── status_panel.py  # 상태 및 품질 패널
 ```
+
+---
+
+## 📚 References
+
+이 소프트웨어에 구현된 알고리즘의 학술적 근거입니다.
+
+[1] Abdel-Aziz, Y. I., & Karara, H. M. (1971). **Direct linear transformation into object space coordinates in close-range photogrammetry.** *Proceedings of the ASP Symposium on Close-Range Photogrammetry.* — 동차 좌표계 기반 투영 행렬(Homography) 추정의 수학적 토대.
+
+[2] Bookstein, F. L. (1989). **Principal warps: Thin-plate splines and the decomposition of deformations.** *IEEE Transactions on Pattern Analysis and Machine Intelligence*, 11(6), 567–585. <https://doi.org/10.1109/34.24792> — TPS(얇은 판 스플라인) 변환의 원논문. 비강체 이미지 정합의 수학적 기초.
+
+[3] Hardy, R. L. (1971). **Multiquadric equations of topography and other irregular surfaces.** *Journal of Geophysical Research*, 76(8), 1905–1915. <https://doi.org/10.1029/JB076i008p01905> — 멀티쿼드릭 RBF 보간법의 원논문. 산개 데이터의 연속면 모델링 기법 제안.
+
+[4] Goshtasby, A. (1988). **Registration of images with geometric distortions.** *IEEE Transactions on Geoscience and Remote Sensing*, 26(1), 60–64. <https://doi.org/10.1109/36.3000> — 2차·3차 전역 다항식 변환을 이용한 기하 왜곡 보정 방법론.
+
+[5] Fischler, M. A., & Bolles, R. C. (1981). **Random Sample Consensus: A paradigm for model fitting with applications to image analysis and automated cartography.** *Communications of the ACM*, 24(6), 381–395. <https://doi.org/10.1145/358669.358692> — RANSAC 알고리즘 원논문. 이상점(outlier)을 포함한 데이터에서 강건한 모델을 추정하는 패러다임.
 
 ---
 
