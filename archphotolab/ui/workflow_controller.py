@@ -246,36 +246,50 @@ class WorkflowController:
         else:
             self.state.workflow_stage = WORKFLOW_STAGE_ALIGNMENT
 
-        config = AlignmentConfig(mode=self.state.alignment_mode, ransac=self.state.ransac_enabled)
-        result = estimate_transform(
-            photo_points, plan_points, config=config,
-            photo_shape=self.state.photo_image.shape,
+        # 1. 원본 해상도 기준 실제 정합 관계 계산 (저장 및 내보내기용)
+        raw_config = AlignmentConfig(mode=self.state.alignment_mode, ransac=self.state.ransac_enabled)
+        raw_result = estimate_transform(
+            photo_points, plan_points, config=raw_config,
+            photo_shape=None, # tps_maps는 고해상도에서는 불필요하므로 None
         )
 
-        if result.error_message is not None:
+        if raw_result.error_message is not None:
             self.state.clear_alignment()
-            return False, result, result.error_message
+            return False, raw_result, raw_result.error_message
 
-        if result.matrix is None:
+        if raw_result.matrix is None:
             self.state.clear_alignment()
-            return False, result, result.error_message or MSG_ALIGNMENT_RESULT_INVALID
+            return False, raw_result, raw_result.error_message or MSG_ALIGNMENT_RESULT_INVALID
 
-        self.state.homography = result.matrix
-        self.state.alignment_score = result.score
-        self.state.reprojection_errors = result.reprojection_errors
-        self.state.reprojection_avg = result.quality_profile.average_error
-        self.state.reprojection_median = result.quality_profile.median_error
-        self.state.reprojection_max = result.quality_profile.max_error
-        self.state.outlier_indices = result.outlier_indices
+        self.state.homography = raw_result.matrix
+        self.state.alignment_score = raw_result.score
+        self.state.reprojection_errors = raw_result.reprojection_errors
+        self.state.reprojection_avg = raw_result.quality_profile.average_error
+        self.state.reprojection_median = raw_result.quality_profile.median_error
+        self.state.reprojection_max = raw_result.quality_profile.max_error
+        self.state.outlier_indices = raw_result.outlier_indices
         self.state.quality_profile = StateAlignmentProfile(
-            average_error=result.quality_profile.average_error,
-            median_error=result.quality_profile.median_error,
-            max_error=result.quality_profile.max_error,
-            bad_count=result.quality_profile.bad_count,
-            grade=result.quality_profile.grade,
-            used_count=result.quality_profile.inlier_count,
-            score=result.score,
-            outlier_indices=result.outlier_indices,
+            average_error=raw_result.quality_profile.average_error,
+            median_error=raw_result.quality_profile.median_error,
+            max_error=raw_result.quality_profile.max_error,
+            bad_count=raw_result.quality_profile.bad_count,
+            grade=raw_result.quality_profile.grade,
+            used_count=raw_result.quality_profile.inlier_count,
+            score=raw_result.score,
+            outlier_indices=raw_result.outlier_indices,
+        )
+
+        # 2. 화면 표시(프리뷰)용 프록시 해상도 정합 관계 계산
+        # 원본 포인트를 프록시 축척으로 스케일링
+        photo_scale = self.state.photo_proxy_scale
+        plan_scale = self.state.plan_proxy_scale
+        photo_pts_proxy = [(pt[0] * photo_scale, pt[1] * photo_scale) for pt in photo_points]
+        plan_pts_proxy = [(pt[0] * plan_scale, pt[1] * plan_scale) for pt in plan_points]
+
+        proxy_config = AlignmentConfig(mode=self.state.alignment_mode, ransac=self.state.ransac_enabled)
+        proxy_result = estimate_transform(
+            photo_pts_proxy, plan_pts_proxy, config=proxy_config,
+            photo_shape=self.state.photo_image.shape,
         )
 
         # Check if color screening is enabled for plan rendering
@@ -288,29 +302,27 @@ class WorkflowController:
                 self.state.color_keying_tolerance
             )
 
-        # Use cached TPS maps (computed once in estimate_transform) to avoid triple scipy call
-        cached_maps = result.tps_maps
-
+        # Use proxy transform for real-time window preview to avoid huge size stretching!
         self.state.warped_plan = warp_plan_to_photo(
             plan_src,
-            self.state.homography,
+            proxy_result.matrix if proxy_result.matrix is not None else np.zeros((1, 1), dtype=np.float32),
             self.state.photo_image.shape,
             mode=self.state.alignment_mode,
-            photo_points=self.state.photo_points,
-            plan_points=self.state.plan_points,
-            cached_tps_maps=cached_maps,
+            photo_points=photo_pts_proxy,
+            plan_points=plan_pts_proxy,
+            cached_tps_maps=proxy_result.tps_maps,
         )
         self.state.warp_mask = warp_validity_mask(
             plan_shape=self.state.plan_image.shape,
-            transform_matrix=self.state.homography,
+            transform_matrix=proxy_result.matrix if proxy_result.matrix is not None else np.zeros((1, 1), dtype=np.float32),
             photo_shape=self.state.photo_image.shape,
             mode=self.state.alignment_mode,
-            photo_points=self.state.photo_points,
-            plan_points=self.state.plan_points,
-            cached_tps_maps=cached_maps,
+            photo_points=photo_pts_proxy,
+            plan_points=plan_pts_proxy,
+            cached_tps_maps=proxy_result.tps_maps,
         )
 
-        return True, result, None
+        return True, raw_result, None
 
     def _selected_pair_index(self) -> Optional[int]:
         if self.state.selected_point_side == VIEW_MODE_PHOTO:

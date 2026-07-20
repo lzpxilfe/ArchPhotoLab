@@ -257,7 +257,10 @@ class ImagePanel(QWidget):
 
         new_w = max(1, int(self._image_width * self._display_scale))
         new_h = max(1, int(self._image_height * self._display_scale))
-        self._draw_pixmap = self._pixmap.scaled(new_w, new_h, Qt.IgnoreAspectRatio, Qt.SmoothTransformation)
+
+        # Optimization: Reuse the existing scaled QPixmap if the target width/height didn't change (e.g. during pan)
+        if self._draw_pixmap is None or self._draw_pixmap.width() != new_w or self._draw_pixmap.height() != new_h:
+            self._draw_pixmap = self._pixmap.scaled(new_w, new_h, Qt.IgnoreAspectRatio, Qt.SmoothTransformation)
 
         base_left = (target_w - new_w) // 2
         base_top = PANEL_TOP_BANNER_HEIGHT + (target_h - new_h) // 2
@@ -267,6 +270,7 @@ class ImagePanel(QWidget):
         self._img_width = new_w
         self._img_height = new_h
         self.viewStateChanged.emit(self._zoom, self._pan_offset_x, self._pan_offset_y)
+
 
     def _to_widget_from_image(self, point: tuple[float, float]) -> Optional[tuple[int, int]]:
         if self._pixmap is None:

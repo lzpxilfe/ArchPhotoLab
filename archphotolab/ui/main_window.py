@@ -2022,6 +2022,10 @@ QToolTip {{
         return LABEL_RESULT_VIEW_PREFIX + WORKFLOW_MODE_OVERLAY
 
     def _refresh_result_view(self) -> None:
+        if getattr(self, "_alignment_worker", None) is not None:
+            # Prevent reading shared AppState while background thread is mutating it
+            return
+
         mode = self._current_view_mode()
         self.state.result_view_mode = mode
 

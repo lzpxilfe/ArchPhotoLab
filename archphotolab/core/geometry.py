@@ -154,24 +154,24 @@ def _estimate_tps(
     """
     try:
         from scipy.interpolate import RBFInterpolator
+        src = np.asarray(src_points, dtype=np.float64)  # plan control points
+        dst = np.asarray(dst_points, dtype=np.float64)  # photo control points
+
+        # Build RBF from photo-space -> plan-space (inverse mapping for remap)
+        rbf_x = RBFInterpolator(dst, src[:, 0], kernel="thin_plate_spline", smoothing=0.0)
+        rbf_y = RBFInterpolator(dst, src[:, 1], kernel="thin_plate_spline", smoothing=0.0)
+
+        h, w = photo_shape[:2]
+        grid_y, grid_x = np.mgrid[0:h, 0:w]
+        query = np.column_stack([grid_x.ravel().astype(np.float64), grid_y.ravel().astype(np.float64)])
+
+        remap_x = rbf_x(query).reshape(h, w).astype(np.float32)
+        remap_y = rbf_y(query).reshape(h, w).astype(np.float32)
+        return remap_x, remap_y, None
     except ImportError:
         return None, None, MSG_TPS_SCIPY_MISSING
-
-    src = np.asarray(src_points, dtype=np.float64)  # plan control points
-    dst = np.asarray(dst_points, dtype=np.float64)  # photo control points
-
-    # Build RBF from photo-space -> plan-space (inverse mapping for remap)
-    # We want: for each photo pixel (px, py), find which plan pixel to sample
-    rbf_x = RBFInterpolator(dst, src[:, 0], kernel="thin_plate_spline", smoothing=0.0)
-    rbf_y = RBFInterpolator(dst, src[:, 1], kernel="thin_plate_spline", smoothing=0.0)
-
-    h, w = photo_shape[:2]
-    grid_y, grid_x = np.mgrid[0:h, 0:w]
-    query = np.column_stack([grid_x.ravel().astype(np.float64), grid_y.ravel().astype(np.float64)])
-
-    remap_x = rbf_x(query).reshape(h, w).astype(np.float32)
-    remap_y = rbf_y(query).reshape(h, w).astype(np.float32)
-    return remap_x, remap_y, None
+    except (np.linalg.LinAlgError, ValueError) as e:
+        return None, None, str(e)
 
 
 # ─── Polynomial helpers ──────────────────────────────────────────────────────
@@ -201,7 +201,6 @@ def _poly_design_matrix(pts: np.ndarray, degree: int) -> np.ndarray:
         ])
     raise ValueError(f"Unsupported polynomial degree: {degree}")
 
-
 def _estimate_poly(
     src_points: Sequence[Tuple[float, float]],
     dst_points: Sequence[Tuple[float, float]],
@@ -214,24 +213,31 @@ def _estimate_poly(
     into photo-space (pull-based remap).
     Returns (remap_x, remap_y, error_message).
     """
-    src = np.asarray(src_points, dtype=np.float64)  # plan control points
-    dst = np.asarray(dst_points, dtype=np.float64)  # photo control points
+    try:
+        src = np.asarray(src_points, dtype=np.float64)  # plan control points
+        dst = np.asarray(dst_points, dtype=np.float64)  # photo control points
+        h, w = photo_shape[:2]
 
-    # Inverse direction: photo (dst) -> plan (src)
-    A = _poly_design_matrix(dst, degree)
-    coeffs_x, _, _, _ = np.linalg.lstsq(A, src[:, 0], rcond=None)
-    coeffs_y, _, _, _ = np.linalg.lstsq(A, src[:, 1], rcond=None)
+        dst_norm = dst.copy()
+        dst_norm[:, 0] /= max(w, 1)
+        dst_norm[:, 1] /= max(h, 1)
 
-    h, w = photo_shape[:2]
-    grid_y, grid_x = np.mgrid[0:h, 0:w]
-    query = np.column_stack([
-        grid_x.ravel().astype(np.float64),
-        grid_y.ravel().astype(np.float64),
-    ])
-    A_full = _poly_design_matrix(query, degree)
-    remap_x = (A_full @ coeffs_x).reshape(h, w).astype(np.float32)
-    remap_y = (A_full @ coeffs_y).reshape(h, w).astype(np.float32)
-    return remap_x, remap_y, None
+        # Inverse direction: normalized photo (dst_norm) -> plan (src)
+        A = _poly_design_matrix(dst_norm, degree)
+        coeffs_x, _, _, _ = np.linalg.lstsq(A, src[:, 0], rcond=None)
+        coeffs_y, _, _, _ = np.linalg.lstsq(A, src[:, 1], rcond=None)
+
+        grid_y, grid_x = np.mgrid[0:h, 0:w]
+        query_norm = np.column_stack([
+            grid_x.ravel().astype(np.float64) / max(w, 1),
+            grid_y.ravel().astype(np.float64) / max(h, 1),
+        ])
+        A_full = _poly_design_matrix(query_norm, degree)
+        remap_x = (A_full @ coeffs_x).reshape(h, w).astype(np.float32)
+        remap_y = (A_full @ coeffs_y).reshape(h, w).astype(np.float32)
+        return remap_x, remap_y, None
+    except (ImportError, np.linalg.LinAlgError, ValueError) as e:
+        return None, None, str(e)
 
 
 def _poly_reprojection_errors(
@@ -250,8 +256,6 @@ def _poly_reprojection_errors(
     predicted = np.column_stack([A @ coeffs_x, A @ coeffs_y])
     errors = np.linalg.norm(predicted - dst, axis=1)
     return [float(e) for e in errors]
-
-
 def _estimate_rbf_mq(
     src_points: Sequence[Tuple[float, float]],
     dst_points: Sequence[Tuple[float, float]],
@@ -260,30 +264,30 @@ def _estimate_rbf_mq(
     """RBF Multiquadric warp (Hardy 1971). Smoother boundary extrapolation than TPS."""
     try:
         from scipy.interpolate import RBFInterpolator
+        src = np.asarray(src_points, dtype=np.float64)  # plan
+        dst = np.asarray(dst_points, dtype=np.float64)  # photo
+
+        # Epsilon ≈ 30% of mean nearest-neighbour distance in photo space
+        dists = np.linalg.norm(dst[None, :, :] - dst[:, None, :], axis=-1)
+        np.fill_diagonal(dists, np.inf)
+        epsilon = float(np.mean(np.min(dists, axis=1))) * 0.3 + 1e-6
+
+        rbf_x = RBFInterpolator(dst, src[:, 0], kernel="multiquadric", smoothing=0.0, epsilon=epsilon)
+        rbf_y = RBFInterpolator(dst, src[:, 1], kernel="multiquadric", smoothing=0.0, epsilon=epsilon)
+
+        h, w = photo_shape[:2]
+        grid_y, grid_x = np.mgrid[0:h, 0:w]
+        query = np.column_stack([
+            grid_x.ravel().astype(np.float64),
+            grid_y.ravel().astype(np.float64),
+        ])
+        remap_x = rbf_x(query).reshape(h, w).astype(np.float32)
+        remap_y = rbf_y(query).reshape(h, w).astype(np.float32)
+        return remap_x, remap_y, None
     except ImportError:
         return None, None, MSG_TPS_SCIPY_MISSING
-
-    src = np.asarray(src_points, dtype=np.float64)  # plan
-    dst = np.asarray(dst_points, dtype=np.float64)  # photo
-
-    # Epsilon ≈ 30% of mean nearest-neighbour distance in photo space
-    dists = np.linalg.norm(dst[None, :, :] - dst[:, None, :], axis=-1)
-    np.fill_diagonal(dists, np.inf)
-    epsilon = float(np.mean(np.min(dists, axis=1))) * 0.3 + 1e-6
-
-    rbf_x = RBFInterpolator(dst, src[:, 0], kernel="multiquadric", smoothing=0.0, epsilon=epsilon)
-    rbf_y = RBFInterpolator(dst, src[:, 1], kernel="multiquadric", smoothing=0.0, epsilon=epsilon)
-
-    h, w = photo_shape[:2]
-    grid_y, grid_x = np.mgrid[0:h, 0:w]
-    query = np.column_stack([
-        grid_x.ravel().astype(np.float64),
-        grid_y.ravel().astype(np.float64),
-    ])
-    remap_x = rbf_x(query).reshape(h, w).astype(np.float32)
-    remap_y = rbf_y(query).reshape(h, w).astype(np.float32)
-    return remap_x, remap_y, None
-
+    except (np.linalg.LinAlgError, ValueError) as e:
+        return None, None, str(e)
 
 
 def _estimate_affine(src: np.ndarray, dst: np.ndarray, cfg: AlignmentConfig) -> Tuple[Optional[np.ndarray], Optional[np.ndarray]]:
@@ -633,7 +637,6 @@ def warp_plan_to_photo(
 
     raise ValueError(MSG_HOMOGRAPHY_BAD_RESULT)
 
-
 def warp_validity_mask(
     plan_shape: Tuple[int, int],
     transform_matrix: np.ndarray,
@@ -659,7 +662,7 @@ def warp_validity_mask(
             remap_x, remap_y = cached_tps_maps
         else:
             if photo_points is None or plan_points is None:
-                return np.full((height, width), 255, dtype=np.uint8)
+                return np.zeros((height, width), dtype=np.uint8)
             if mode == ALIGNMENT_MODE_TPS:
                 remap_x, remap_y, err = _estimate_tps(
                     list(plan_points), list(photo_points), photo_shape)
@@ -673,7 +676,7 @@ def warp_validity_mask(
                 remap_x, remap_y, err = _estimate_rbf_mq(
                     list(plan_points), list(photo_points), photo_shape)
             if err is not None:
-                return np.full((height, width), 255, dtype=np.uint8)
+                return np.zeros((height, width), dtype=np.uint8)
         return cv2.remap(
             mask_src, remap_x, remap_y,
             interpolation=cv2.INTER_NEAREST,
@@ -682,7 +685,7 @@ def warp_validity_mask(
         )
 
     if transform_matrix is None:
-        return np.full((height, width), 255, dtype=np.uint8)
+        return np.zeros((height, width), dtype=np.uint8)
 
     if transform_matrix.shape == TRANSFORM_MATRIX_SHAPE_HOMOGRAPHY:
         return cv2.warpPerspective(
@@ -704,7 +707,7 @@ def warp_validity_mask(
             borderValue=0,
         )
 
-    return np.full((height, width), 255, dtype=np.uint8)
+    return np.zeros((height, width), dtype=np.uint8)
 
 
 def _tps_reprojection_errors(

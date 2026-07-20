@@ -70,11 +70,16 @@ def _coerce_int(value: Any, default: int) -> int:
 
 PROJECT_FORMAT = APP_VERSION
 
-
 def load_project(path: str) -> Dict[str, Any]:
     """Load raw project dictionary from JSON file."""
-    with open(path, "r", encoding=JSON_CHARSET_ENCODING) as f:
-        data = json.load(f)
+    try:
+        with open(path, "r", encoding=JSON_CHARSET_ENCODING) as f:
+            data = json.load(f)
+    except json.JSONDecodeError as e:
+        raise ValueError(f"{MSG_PROJECT_FORMAT_INVALID}: {str(e)}")
+    except OSError as e:
+        raise ValueError(f"파일을 읽을 수 없습니다: {str(e)}")
+        
     if not isinstance(data, dict):
         raise ValueError(MSG_PROJECT_FORMAT_INVALID)
     return data

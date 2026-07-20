@@ -42,21 +42,23 @@ def get_unique_path(path: str) -> str:
             return str(new_path)
         counter += 1
 
-
 def save_png(path: str, image: np.ndarray, overwrite: bool = False) -> str:
     if image is None:
         raise ValueError(MSG_EXPORT_NO_IMAGE)
     if image.ndim != 3 or image.shape[2] != RGB_CHANNELS_EXPECTED:
         raise ValueError(MSG_EXPORT_IMAGE_NOT_RGB)
     
-    p = Path(path)
-    p.parent.mkdir(parents=True, exist_ok=True)
-    
-    final_path = path if overwrite else get_unique_path(path)
-    
-    img = np.clip(image, IMAGE_VALUE_MIN_INT, IMAGE_VALUE_MAX_INT).astype(np.uint8)
-    Image.fromarray(img).save(final_path, format=PNG_FORMAT)
-    return final_path
+    try:
+        p = Path(path)
+        p.parent.mkdir(parents=True, exist_ok=True)
+        
+        final_path = path if overwrite else get_unique_path(path)
+        
+        img = np.clip(image, IMAGE_VALUE_MIN_INT, IMAGE_VALUE_MAX_INT).astype(np.uint8)
+        Image.fromarray(img).save(final_path, format=PNG_FORMAT)
+        return final_path
+    except OSError as e:
+        raise OSError(f"이미지를 저장하는 동안 오류가 발생했습니다: {str(e)}")
 
 
 def export_paths(export_dir: str, timestamp: str | None = None) -> Tuple[str, str, str]:

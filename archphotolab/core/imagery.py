@@ -86,7 +86,6 @@ def blend_overlay(photo_image: np.ndarray, warped_plan_image: np.ndarray, alpha:
         
     return np.clip(result, IMAGE_VALUE_LOWER_CLIP, IMAGE_VALUE_UPPER_CLIP).astype(np.uint8)
 
-
 def blend_multiply(
     photo_image: np.ndarray,
     warped_plan_image: np.ndarray,
@@ -103,6 +102,11 @@ def blend_multiply(
     """
     if photo_image is None or warped_plan_image is None:
         raise ValueError(MSG_OVERLAY_IMAGE_MISSING)
+    
+    # Ensure warped_plan_image has 3 channels if it is grayscale (2D)
+    if len(warped_plan_image.shape) == 2:
+        warped_plan_image = cv2.cvtColor(warped_plan_image, cv2.COLOR_GRAY2BGR)
+
     if warped_plan_image.shape[:2] != photo_image.shape[:2]:
         raise ValueError(MSG_OVERLAY_IMAGE_SIZE_MISMATCH)
 
@@ -120,10 +124,16 @@ def blend_multiply(
 
     # Build the validity weight map (0.0 = border/no-data, 1.0 = valid plan area)
     if validity_mask is not None:
-        valid = (validity_mask.astype(np.float32) / 255.0)[:, :, np.newaxis]
+        valid = (validity_mask.astype(np.float32) / 255.0)
+        if len(valid.shape) == 2:
+            valid = valid[:, :, np.newaxis]
     else:
-        # Fallback: treat all-zero pixels as border fill (check RGB channels)
-        valid = (plan_rgb.sum(axis=2) > 0).astype(np.float32)[:, :, np.newaxis]
+        if has_alpha:
+            valid = plan_alpha
+        else:
+            # If completely opaque and no mask, assume the whole image is valid
+            # to avoid erasing legitimate black lines (sum=0).
+            valid = np.ones((warped_plan_image.shape[0], warped_plan_image.shape[1], 1), dtype=np.float32)
 
     # Pure multiply result (only meaningful where valid)
     multiplied = photo * (plan_rgb / 255.0)
