@@ -2,12 +2,6 @@
 
 ArchPhotoLab is a desktop tool for archaeology-focused photo processing. It aligns one drone photo and one plan image with manually picked control points, previews the result as an overlay, applies a record-friendly flatten correction, and exports PNG outputs from a single workflow.
 
-## 📐 7-Mode Alignment Showcase (정합 방식 비교)
-
-ArchPhotoLab supports 7 different geometric alignment modes to handle oblique drone shots and varying terrain conditions. Below is a 2x2 grid showcase comparison of **Homography (Perspective)**, **TPS (Thin Plate Spline)**, **Polynomial 2nd Order**, and **RBF Multiquadric** alignments using actual drone footage (`DJI_0059.JPG`) and site maps of the **Anyeong-dong Archaeological Remains Site**:
-
-![2x2 Alignment Showcase Grid](alignment_showcase_2x2.png)
-
 ![Python](https://img.shields.io/badge/Python-3.10+-blue?logo=python)
 ![PySide6](https://img.shields.io/badge/PySide6-Desktop%20GUI-41B883?logo=qt)
 ![OpenCV](https://img.shields.io/badge/OpenCV-4.10+-brightgreen?logo=opencv)
